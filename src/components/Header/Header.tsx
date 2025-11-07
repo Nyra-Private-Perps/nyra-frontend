@@ -1,6 +1,4 @@
-// src/components/Header/Header.tsx
-"use client";
-
+"use client"
 import { useState } from "react";
 import { useAccount, useDisconnect } from "wagmi";
 import { ConnectWalletModal } from "../Wallet/ConnectWalletModal";
@@ -12,85 +10,83 @@ export function Header() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { isConnected, address } = useAccount();
   const { disconnect } = useDisconnect();
-  const pathname = usePathname(); // ← ADD THIS
+  const pathname = usePathname();
 
   const isActive = (path: string) => pathname === path;
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-50 px-6 py-5">
-        <div className="mx-auto max-w-7xl">
-          <div className="relative flex items-center justify-between px-8 py-4 bg-white/5 backdrop-blur-2xl border border-white/20 rounded-3xl shadow-2xl overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-r before:from-purple-500/10 before:via-transparent before:to-blue-500/10 before:pointer-events-none">
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              <div className="absolute -top-20 -left-20 w-64 h-64 bg-purple-600 rounded-full blur-3xl opacity-20" />
-              <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-cyan-500 rounded-full blur-3xl opacity-20" />
-            </div>
-
-            {/* Logo */}
+      {/* --- UPDATED HEADER with matching glass effect and border --- */}
+      <header className="fixed top-0 left-0 right-0 z-50 bg-black/20 backdrop-blur-xl border-b border-white/10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
             <Link href="/" className="relative z-10 flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-xl flex items-center justify-center">
-                <span className="text-2xl font-bold text-white">N</span>
+              {/* --- UPDATED LOGO with purple/fuchsia theme --- */}
+              <div className="w-10 h-10 bg-fuchsia-500/20 hover:bg-fuchsia-500/30 backdrop-blur-md rounded-lg flex items-center justify-center transition-colors border border-white/10">
+                <span className="text-slate-50 font-bold text-lg">N</span>
               </div>
-              <h1 className="text-2xl font-black text-white tracking-tighter">Nyra</h1>
+              <div>
+                <h1 className="text-slate-50 font-semibold text-lg">Nyra</h1>
+                <p className="text-xs text-slate-400 -mt-1">Strategy Manager</p>
+              </div>
             </Link>
+          </div>
 
-            {/* Nav Links */}
-            <nav className="hidden md:flex items-center space-x-10">
-              <Link
-                href="/vaults"
-                className={`flex items-center gap-2 font-medium transition-all duration-300 ${
-                  isActive("/vaults")
-                    ? "text-purple-400 scale-110"
-                    : "text-white/90 hover:text-white hover:scale-110"
-                }`}
-              >
-                <Vault className="w-5 h-5" />
-                Vaults
-              </Link>
-              <Link
-                href="/profile"
-                className={`flex items-center gap-2 font-medium transition-all duration-300 ${
-                  isActive("/profile")
-                    ? "text-purple-400 scale-110"
-                    : "text-white/90 hover:text-white hover:scale-110"
-                }`}
-              >
-                <User className="w-5 h-5" />
-                Profile
-              </Link>
-            </nav>
+          {/* --- UPDATED NAV LINKS with better active/inactive states --- */}
+          <nav className="hidden md:flex items-center gap-8">
+            <Link 
+              href="/vaults" 
+              className={`text-sm transition-colors flex items-center gap-2 ${
+                isActive("/vaults")
+                  ? "text-slate-50"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Vault className="w-5 h-5" />
+              Vaults
+            </Link>
+            <Link 
+              href="/profile" 
+              className={`text-sm transition-colors flex items-center gap-2 ${
+                isActive("/profile")
+                  ? "text-slate-50"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <User className="w-5 h-5" />
+              Portfolio
+            </Link>
+          </nav>
 
-            {/* Wallet */}
-            <div className="relative z-10">
-              {isConnected ? (
-                <div className="flex items-center gap-4">
-                  <div className="hidden sm:flex items-center gap-2 px-5 py-2.5 bg-white/10 rounded-2xl border border-purple-500/30 backdrop-blur-xl">
-                    <div className="w-2.5 h-2.5 bg-purple-400 rounded-full animate-pulse" />
-                    <span className="text-sm font-mono text-purple-200">
-                      {`${address?.slice(0, 6)}...${address?.slice(-4)}`}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => disconnect()}
-                    className="px-6 py-3 text-sm font-bold text-white bg-gradient-to-r from-purple-700 to-violet-800 hover:from-purple-800 hover:to-violet-900 rounded-2xl transition-all duration-300 hover:scale-105 shadow-2xl border border-purple-500/50"
-                  >
-                    Disconnect
-                  </button>
+          {/* --- UPDATED WALLET BUTTONS with new color scheme and glow --- */}
+          <div className="relative z-10">
+            {isConnected ? (
+              <div className="flex items-center gap-4">
+                <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-black/20 rounded-lg border border-white/10 backdrop-blur-xl">
+                  <div className="w-2.5 h-2.5 bg-fuchsia-500 rounded-full" />
+                  <span className="text-sm font-mono text-slate-300">
+                    {`${address?.slice(0, 6)}...${address?.slice(-4)}`}
+                  </span>
                 </div>
-              ) : (
                 <button
-                  onClick={() => setIsModalOpen(true)}
-                  className="group flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl font-bold text-white shadow-2xl transition-all duration-300 hover:scale-105 hover:shadow-cyan-500/50"
+                  onClick={() => disconnect()}
+                  className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-fuchsia-500 to-blue-600 rounded-lg hover:from-fuchsia-400 hover:to-blue-400 rounded-lg transition-all duration-300 shadow-lg shadow-fuchsia-500/30 hover:shadow-fuchsia-500/40"
                 >
-                  <Wallet className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-                  Connect Wallet
+                  Disconnect
                 </button>
-              )}
-            </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="group flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-fuchsia-500 to-blue-600 rounded-lg hover:from-fuchsia-400 hover:to-blue-400 rounded-lg transition-all duration-300 shadow-lg shadow-fuchsia-500/30 hover:shadow-fuchsia-500/40"
+              >
+                <Wallet className="w-5 h-5 group-hover:rotate-12 transition-transform duration-300" />
+                Connect Wallet
+              </button>
+            )}
           </div>
         </div>
       </header>
-
       {isModalOpen && <ConnectWalletModal onClose={() => setIsModalOpen(false)} />}
     </>
   );

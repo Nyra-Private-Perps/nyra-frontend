@@ -1,6 +1,4 @@
-// app/components/wallet/ConnectWalletModal.tsx
-"use client";
-
+"use client"
 import { useConnect } from 'wagmi';
 
 // Basic SVG icons for wallets (replace with actual icons for production)
@@ -12,7 +10,11 @@ const WalletIcon = ({ name }: { name: string }) => {
   return <div className="w-8 h-8 mr-4 bg-gray-600 rounded-full" />;
 };
 
-export function ConnectWalletModal({ onClose }: { onClose: () => void }) {
+interface ConnectWalletModalProps {
+  onClose: () => void
+}
+
+export function ConnectWalletModal({ onClose }: ConnectWalletModalProps) {
   const { connectors, connect } = useConnect();
 
   // Separate installed connectors from the rest
@@ -30,60 +32,48 @@ export function ConnectWalletModal({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70" onClick={onClose}>
-      <div 
-        className="w-full max-w-md p-6 bg-gray-900 border border-gray-700 rounded-2xl shadow-lg backdrop-filter backdrop-blur-xl"
-        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside modal
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="glass-card p-8 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-white">Connect a wallet</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+          <h2 className="text-heading-lg">Connect Wallet</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-200 transition-colors">
+            ✕
           </button>
         </div>
 
         <div className="space-y-3">
-          {browserWalletConnector && (
+        {browserWalletConnector && (
              <button
               key={browserWalletConnector.id}
-              onClick={() => { connect({ connector: browserWalletConnector }); onClose(); }}
-              className="flex items-center w-full px-4 py-3 text-lg font-semibold text-left text-white transition-all duration-300 bg-gray-800 border border-gray-700 rounded-lg hover:border-blue-500 hover:bg-gray-700"
-            >
-              <WalletIcon name={browserWalletConnector.name} />
-              Browser Wallet
-              <span className="px-2 py-1 ml-auto text-xs text-blue-300 bg-blue-900 rounded-md">Installed</span>
+              onClick={() => { connect({ connector: browserWalletConnector }); onClose(); }} className="w-full px-4 py-3 bg-slate-700/80 hover:bg-slate-600/80 text-white rounded-lg transition-colors border border-slate-600/50">
+           Browser Wallet
+          </button>
+        )}
+        {installedConnectors.map((connector) => (
+            <button
+              key={connector.id}
+              onClick={() => { connect({ connector }); onClose(); }} className="w-full px-4 py-3 bg-slate-700/80 hover:bg-slate-600/80 text-white rounded-lg transition-colors border border-slate-600/50">
+            <WalletIcon name={connector.name} />
+            {connector.name}
+          </button>
+        ))}
+                    {otherConnectors.map((connector) => (
+            <button
+              key={connector.id}
+              onClick={() => { connect({ connector }); onClose(); }} className="w-full px-4 py-3 bg-slate-700/80 hover:bg-slate-600/80 text-white rounded-lg transition-colors border border-slate-600/50">
+                         {connector.name}
             </button>
-          )}
+          ))}
 
-          {installedConnectors.map((connector) => (
-            <button
-              key={connector.id}
-              onClick={() => { connect({ connector }); onClose(); }}
-              className="flex items-center w-full px-4 py-3 text-lg font-semibold text-left text-white transition-all duration-300 bg-gray-800 border border-gray-700 rounded-lg hover:border-blue-500 hover:bg-gray-700"
-            >
-              <WalletIcon name={connector.name} />
-              {connector.name}
-              <span className="px-2 py-1 ml-auto text-xs text-blue-300 bg-blue-900 rounded-md">Installed</span>
-            </button>
-          ))}
-          
-          {otherConnectors.map((connector) => (
-            <button
-              key={connector.id}
-              onClick={() => { connect({ connector }); onClose(); }}
-              className="flex items-center w-full px-4 py-3 text-lg font-semibold text-left text-white transition-all duration-300 bg-gray-800 border border-gray-700 rounded-lg hover:border-blue-500 hover:bg-gray-700"
-            >
-              <WalletIcon name={connector.name} />
-              {connector.name}
-            </button>
-          ))}
         </div>
-        <p className="mt-6 text-xs text-center text-gray-500">
-          By connecting a wallet, you agree to our Terms of Service.
-        </p>
+
+        <button
+          onClick={onClose}
+          className="w-full mt-6 px-4 py-3 bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 rounded-lg transition-colors border border-slate-700/50"
+        >
+          Cancel
+        </button>
       </div>
     </div>
-  );
+  )
 }
