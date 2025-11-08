@@ -5,6 +5,7 @@ import { useAccount, useDisconnect } from "wagmi"
 import { ConnectWalletModal } from "../Wallet/ConnectWalletModal"
 import { useState } from "react"
 import { AnimatePresence } from "framer-motion"
+import Image from "next/image"
 
 function truncateAddress(address: string) {
   if (!address) return ""
@@ -53,10 +54,10 @@ export function Header() {
     <header className="w-full px-4 sm:px-6 lg:px-8 py-4">
       <nav className="flex items-center justify-between max-w-7xl mx-auto">
         <Link href="/" className="flex items-center gap-3">
-          <div className="bg-[var(--primary)] text-[var(--primary-foreground)] w-10 h-10 flex items-center justify-center rounded-lg font-bold text-xl">
-            N
+          <div className=" flex items-center justify-center rounded-lg font-bold text-xl">
+       <Image src="/logo.png" alt="Nyra Logo" width={80} height={80} />
           </div>
-          <span className="text-xl font-semibold text-[var(--foreground)]">Nyra</span>
+          {/* <span className="text-xl font-semibold text-[var(--foreground)]">Nyra</span> */}
         </Link>
         <div className="hidden md:flex items-center gap-8">
           <Link href="/vaults" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">

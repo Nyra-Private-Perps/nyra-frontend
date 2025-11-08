@@ -1,123 +1,194 @@
 "use client"
 
 import { Header } from "@/components/Header/Header"
-import { VaultCard } from "@/components/Vaults/VerifiedVaultCard" // Make sure path is correct
-import { Search, ChevronDown } from "lucide-react"
-import { motion } from "framer-motion" // 1. Import motion
+import { VaultCard } from "@/components/Vaults/VerifiedVaultCard"
+import { Search } from "lucide-react"
+import { motion } from "framer-motion"
+import { useState, useEffect, useMemo } from "react"
+import { getRealPerpVaults } from '@/lib/hyperliquid' // ← FIXED PATH
 
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: {
-      staggerChildren: 0.05, // Stagger the animation of children
-    },
+    transition: { staggerChildren: 0.05 },
   },
 }
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 10 },
-  visible: { opacity: 1, y: 0 },
-}
-// Data now includes chartData again for the graphs
-const vaults: {
+type Vault = {
+  id: string;                    // ADDED
   name: string;
-  risk: "Low Risk" | "Medium Risk" | "High Risk";
+  risk: string;
   apy: string;
   tvl: string;
   slug: string;
+  chain: string;
   chartData: { v: number }[];
-}[] = [
-  {
-    name: "ETH Momentum", risk: "Medium Risk", apy: "18.5%", tvl: "$12.5M", slug: "eth-momentum-strategy",
-    chartData: [{ v: 10 }, { v: 50 }, { v: 40 }, { v: 80 }, { v: 70 }, { v: 95 }],
-  },
-  {
-    name: "BTC Yield Farm", risk: "Low Risk", apy: "12.3%", tvl: "$25.1M", slug: "btc-yield-farm",
-    chartData: [{ v: 10 }, { v: 20 }, { v: 35 }, { v: 30 }, { v: 50 }, { v: 60 }],
-  },
-  {
-    name: "Stablecoin Growth", risk: "Low Risk", apy: "8.1%", tvl: "$59.8M", slug: "stablecoin-growth",
-    chartData: [{ v: 10 }, { v: 15 }, { v: 25 }, { v: 40 }, { v: 55 }, { v: 70 }],
-  },
-  {
-    name: "DeFi Blue Chip", risk: "High Risk", apy: "22.7%", tvl: "$8.2M", slug: "defi-blue-chip",
-    chartData: [{ v: 60 }, { v: 40 }, { v: 80 }, { v: 50 }, { v: 90 }, { v: 70 }],
-  },
-  {
-    name: "SOL Ecosystem", risk: "High Risk", apy: "35.2%", tvl: "$15.4M", slug: "sol-ecosystem",
-    chartData: [{ v: 10 }, { v: 30 }, { v: 20 }, { v: 50 }, { v: 60 }, { v: 80 }],
-  },
-  {
-    name: "AVAX Rush", risk: "Medium Risk", apy: "19.8%", tvl: "$6.7M", slug: "avax-rush",
-    chartData: [{ v: 20 }, { v: 10 }, { v: 40 }, { v: 30 }, { v: 60 }, { v: 50 }],
-  },
-]
+};
+
+const ITEMS_PER_PAGE = 9;
 
 export default function VaultsPage() {
+  const [vaults, setVaults] = useState<Vault[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState("")
+  const [riskFilter, setRiskFilter] = useState<"All" | "Low Risk" | "Medium Risk" | "High Risk">("All")
+  const [assetFilter, setAssetFilter] = useState("All")
+  const [sortBy, setSortBy] = useState<"APY" | "TVL">("APY")
+  const [currentPage, setCurrentPage] = useState(1)
+
+  useEffect(() => {
+    getRealPerpVaults().then(data => {
+      setVaults(data)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  const filteredAndSorted = useMemo(() => {
+    let filtered = vaults
+
+    if (search) {
+      filtered = filtered.filter(v =>
+        v.name.toLowerCase().includes(search.toLowerCase())
+      )
+    }
+
+    if (riskFilter !== "All") {
+      filtered = filtered.filter(v => v.risk === riskFilter)
+    }
+
+    if (assetFilter !== "All") {
+      filtered = filtered.filter(v => v.chain === assetFilter)
+    }
+
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "APY") {
+        return parseFloat(b.apy) - parseFloat(a.apy)
+      }
+      return parseFloat(b.tvl.replace(/[^0-9.-]/g, '')) - parseFloat(a.tvl.replace(/[^0-9.-]/g, ''))
+    })
+  }, [vaults, search, riskFilter, assetFilter, sortBy])
+
+  const totalPages = Math.ceil(filteredAndSorted.length / ITEMS_PER_PAGE)
+  const paginatedVaults = filteredAndSorted.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  )
+
+  const uniqueChains = [...new Set(vaults.map(v => v.chain).filter(Boolean))]
+
+  // Fix page if out of bounds
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages)
+    }
+  }, [currentPage, totalPages])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-2xl text-foreground">Loading live vaults...</div>
+      </div>
+    )
+  }
+
   return (
     <div>
       <Header />
 
       <main className="py-12 px-6">
         <div className="max-w-7xl mx-auto">
-          {/* Page Header */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            className="mb-12"
-          >
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-12">
             <h1 className="text-4xl font-semibold text-[var(--foreground)]">Strategy Vaults</h1>
             <p className="text-lg text-[var(--foreground-secondary)] mt-2">
-              Discover automated strategies to grow your crypto portfolio.
+              {filteredAndSorted.length} unique live vaults • Real APY • On-chain TVL
             </p>
-            </motion.div>
+          </motion.div>
 
-{/* Filters Animation */}
-<motion.div
-  initial={{ opacity: 0, y: -10 }}
-  animate={{ opacity: 1, y: 0 }}
-  transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
-  className="flex flex-wrap items-center gap-4 mb-8"
->
-            <div className="relative flex-grow sm:flex-grow-0 sm:w-72">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground-secondary)]" />
+          <motion.div className="flex flex-wrap items-center gap-4 mb-8">
+            <div className="relative flex-grow sm:flex-grow-0 sm:w-80">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--foreground-secondary)]" />
               <input
                 type="text"
-                placeholder="Search vaults by name or asset..."
-                className="w-full bg-[var(--secondary-light)] shadow-[var(--shadow-card)] border border-[var(--border)] focus:border-[var(--primary)] focus:ring-0 placeholder:text-[var(--foreground-secondary)]/80 text-md rounded-lg pl-11 pr-4 py-3"
+                placeholder="Search vaults..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setCurrentPage(1)
+                }}
+                className="w-full bg-[var(--secondary-light)] border border-[var(--border)] focus:border-[var(--primary)] rounded-lg pl-12 pr-4 py-3 text-md"
               />
             </div>
-            <div className="flex items-center gap-4">
-              {["Asset: All", "Risk: All", "Sort by: APY"].map((label) => (
-                <button
-                  key={label}
-                  className="flex items-center justify-between w-40 bg-[var(--secondary-light)] shadow-[var(--shadow-card)] px-4 py-3 rounded-lg text-md font-medium text-[var(--foreground-secondary)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors"
-                >
-                  <span>{label}</span> <ChevronDown className="w-4 h-4" />
-                </button>
-              ))}
-            </div>
-            </motion.div>
 
-          {/* Vaults Grid */}
+            <select value={riskFilter} onChange={(e) => { setRiskFilter(e.target.value as any); setCurrentPage(1) }} className="px-5 py-3 bg-[var(--secondary-light)] border border-[var(--border)] rounded-lg text-md font-medium">
+              <option>All Risks</option>
+              <option>Low Risk</option>
+              <option>Medium Risk</option>
+              <option>High Risk</option>
+            </select>
+
+            <select value={assetFilter} onChange={(e) => { setAssetFilter(e.target.value); setCurrentPage(1) }} className="px-5 py-3 bg-[var(--secondary-light)] border border-[var(--border)] rounded-lg text-md font-medium">
+              <option value="All">All Chains</option>
+              {uniqueChains.map(chain => (
+                <option key={chain} value={chain}>{chain}</option>
+              ))}
+            </select>
+
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="px-5 py-3 bg-[var(--secondary-light)] border border-[var(--border)] rounded-lg text-md font-medium">
+              <option value="APY">Sort by APY</option>
+              <option value="TVL">Sort by TVL</option>
+            </select>
+          </motion.div>
+
           <motion.div
             variants={containerVariants}
             initial="hidden"
             animate="visible"
             className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
           >
-            {vaults.map((vault) => (
-              <VaultCard key={vault.name} {...vault} />
+            {paginatedVaults.map((vault) => (
+              <VaultCard
+                key={vault.id}           // 100% UNIQUE — NO MORE WARNINGS
+                {...vault}
+              />
             ))}
-           </motion.div>
+          </motion.div>
+
+          {totalPages > 1 && (
+            <div className="flex justify-center gap-3 mt-12">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-6 py-3 bg-[var(--secondary-light)] rounded-lg disabled:opacity-50 font-medium"
+              >
+                Previous
+              </button>
+
+              <span className="text-lg font-medium">
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-6 py-3 bg-[var(--secondary-light)] rounded-lg disabled:opacity-50 font-medium"
+              >
+                Next
+              </button>
+            </div>
+          )}
+
+          {paginatedVaults.length === 0 && (
+            <div className="text-center py-20 text-xl text-[var(--foreground-secondary)]">
+              No vaults found.
+            </div>
+          )}
         </div>
       </main>
-      
-      <footer className="w-full py-6 mt-12">
-        <div className="max-w-7xl mx-auto text-center text-[var(--foreground-secondary)]/80 text-md">
-            © 2024 Nyra. All rights reserved.
+
+      <footer className="w-full py-6 mt-12 border-t border-[var(--border)]">
+        <div className="max-w-7xl mx-auto text-center text-[var(--foreground-secondary)]/70 text-sm">
+          © 2025 Nyra • Private Perpetual Vaults • Data from DefiLlama
         </div>
       </footer>
     </div>

@@ -97,7 +97,7 @@ export default function HomePage() {
 
       <footer className="w-full py-4 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto text-center text-[var(--foreground-secondary)]/80 text-sm">
-          © 2024 Nyra. All rights reserved.
+          © 2025 Nyra. All rights reserved.
         </div>
       </footer>
     </div>
