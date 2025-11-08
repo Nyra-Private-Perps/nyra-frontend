@@ -7,7 +7,7 @@ export default function ProfilePage() {
   return (
     <div className="relative min-h-screen">
       <div className="fixed inset-0 -z-10">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" />
+        <div className="absolute inset-0 bg-[var(--background)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(100,116,139,0.1),transparent_70%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(71,85,105,0.08),transparent_70%)]" />
       </div>

@@ -1,13 +1,47 @@
 "use client"
-import { useConnect } from 'wagmi';
 
-// Basic SVG icons for wallets (replace with actual icons for production)
-const WalletIcon = ({ name }: { name: string }) => {
-  // In a real app, you'd have a mapping of name to SVG/image component
-  if (name.toLowerCase().includes('meta')) return <svg className="w-8 h-8 mr-4" viewBox="0 0 32 32">...</svg>; // Placeholder
-  if (name.toLowerCase().includes('coinbase')) return <svg className="w-8 h-8 mr-4" viewBox="0 0 32 32">...</svg>; // Placeholder
-  if (name.toLowerCase().includes('walletconnect')) return <svg className="w-8 h-8 mr-4" viewBox="0 0 32 32">...</svg>; // Placeholder
-  return <div className="w-8 h-8 mr-4 bg-gray-600 rounded-full" />;
+import { useConnect } from 'wagmi';
+import { motion, AnimatePresence, Variants } from "framer-motion";
+import { X } from 'lucide-react';
+import Image from 'next/image';
+
+// --- Animation Variants (Consistent with other modals) ---
+const backdropVariants: Variants = {
+  visible: { opacity: 1 },
+  hidden: { opacity: 0 },
+}
+
+const modalVariants: Variants = {
+  hidden: { opacity: 0, y: 30, scale: 0.98, transition: { duration: 0.2, ease: "easeOut" } },
+  visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.3, ease: "easeOut" } },
+}
+
+// --- Themed Helper Component ---
+// Basic SVG icons for wallets, styled for the new theme
+const walletIcons: { [key: string]: string } = {
+  metamask: '/metamask.png',
+  coinbasewallet: '/base.png', // wagmi's id for Coinbase Wallet is often 'coinbaseWallet'
+  walletconnect: '/walletconect.png',
+  injected : '/injected.png',
+  talisman : '/talisman.png',
+  // Add other wallets here, using their lowercase id as the key
+};
+const WalletIcon = ({ connectorName }: { connectorName: string }) => {
+  // Normalize the connector name to use as a key (e.g., "MetaMask" -> "metamask")
+  const key = connectorName.toLowerCase().replace(/\s/g, '');
+  
+  // Find the icon in our mapping, or use the default icon as a fallback
+  const iconSrc = walletIcons[key] || '/wallets/default.svg';
+
+  return (
+    <Image
+      src={iconSrc}
+      alt={`${connectorName} logo`}
+      width={32}
+      height={32}
+      className="mr-4 flex-shrink-0 rounded-full"
+    />
+  );
 };
 
 interface ConnectWalletModalProps {
@@ -17,63 +51,88 @@ interface ConnectWalletModalProps {
 export function ConnectWalletModal({ onClose }: ConnectWalletModalProps) {
   const { connectors, connect } = useConnect();
 
-  // Separate installed connectors from the rest
+  // The logic for filtering connectors remains the same
   const installedConnectors = connectors.filter(
     (connector) => connector.ready && connector.id !== 'injected'
   );
-  
-  // The generic "Browser Wallet" (from injected connector)
   const browserWalletConnector = connectors.find(
     (connector) => connector.id === 'injected' && connector.ready
   );
-
   const otherConnectors = connectors.filter(
     (connector) => !connector.ready
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="glass-card p-8 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+    // Animated Backdrop
+    <motion.div
+      key="backdrop"
+      variants={backdropVariants}
+      initial="hidden"
+      animate="visible"
+      exit="hidden"
+      transition={{ duration: 0.3 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      {/* Animated and Themed Modal Panel */}
+      <motion.div
+        key="modal"
+        variants={modalVariants}
+        initial="hidden"
+        animate="visible"
+        exit="hidden"
+        className="bg-[var(--card)] border border-[var(--border)] rounded-lg w-full max-w-sm p-6 text-[var(--foreground)] shadow-[var(--shadow-card)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Themed Header */}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-heading-lg">Connect Wallet</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200 transition-colors">
-            ✕
+          <h2 className="text-xl font-semibold text-[var(--foreground)]">Connect Wallet</h2>
+          <button onClick={onClose} className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors">
+            <X size={24} />
           </button>
         </div>
 
+        {/* Themed List of Wallets */}
         <div className="space-y-3">
-        {browserWalletConnector && (
-             <button
+          {browserWalletConnector && (
+            <button
               key={browserWalletConnector.id}
-              onClick={() => { connect({ connector: browserWalletConnector }); onClose(); }} className="w-full px-4 py-3 bg-slate-700/80 hover:bg-slate-600/80 text-white rounded-lg transition-colors border border-slate-600/50">
-           Browser Wallet
-          </button>
-        )}
-        {installedConnectors.map((connector) => (
+              onClick={() => { connect({ connector: browserWalletConnector }); onClose(); }}
+              className="w-full flex items-center text-left px-4 py-3 bg-[var(--secondary)] hover:bg-[var(--hover)] text-[var(--secondary-foreground)] rounded-lg transition-colors border border-[var(--border)] font-semibold"
+            >
+              Browser Wallet
+            </button>
+          )}
+          {installedConnectors.map((connector) => (
             <button
               key={connector.id}
-              onClick={() => { connect({ connector }); onClose(); }} className="w-full px-4 py-3 bg-slate-700/80 hover:bg-slate-600/80 text-white rounded-lg transition-colors border border-slate-600/50">
-            <WalletIcon name={connector.name} />
-            {connector.name}
-          </button>
-        ))}
-                    {otherConnectors.map((connector) => (
-            <button
-              key={connector.id}
-              onClick={() => { connect({ connector }); onClose(); }} className="w-full px-4 py-3 bg-slate-700/80 hover:bg-slate-600/80 text-white rounded-lg transition-colors border border-slate-600/50">
-                         {connector.name}
+              onClick={() => { connect({ connector }); onClose(); }}
+              className="w-full flex items-center text-left px-4 py-3 bg-[var(--secondary)] hover:bg-[var(--hover)] text-[var(--secondary-foreground)] rounded-lg transition-colors border border-[var(--border)] font-semibold"
+            >
+              <WalletIcon connectorName={connector.name} />
+              {connector.name}
             </button>
           ))}
-
+          {otherConnectors.map((connector) => (
+            <button
+              key={connector.id}
+              onClick={() => { connect({ connector }); onClose(); }}
+              className="w-full flex items-center text-left px-4 py-3 bg-[var(--secondary)] hover:bg-[var(--hover)] text-[var(--secondary-foreground)] rounded-lg transition-colors border border-[var(--border)] font-semibold"
+            >
+              <WalletIcon connectorName={connector.name} />
+              {connector.name}
+            </button>
+          ))}
         </div>
 
+        {/* Themed Cancel Button */}
         <button
           onClick={onClose}
-          className="w-full mt-6 px-4 py-3 bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 rounded-lg transition-colors border border-slate-700/50"
+          className="w-full text-center py-2 mt-4 text-sm font-medium text-[var(--foreground-secondary)] hover:bg-[var(--hover)] rounded-lg transition-colors"
         >
           Cancel
         </button>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }

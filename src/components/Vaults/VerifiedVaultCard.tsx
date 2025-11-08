@@ -1,96 +1,109 @@
-"use client"
+"use-client"
 
-import { ShieldCheck, TrendingUp, AlertCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { AreaChart, Area, ResponsiveContainer, YAxis } from "recharts"
+import { motion, Variants } from "framer-motion"
+import { ArrowRight } from "lucide-react" // Import an icon for the button
 
-export function VerifiedVaultCard({ name, manager, tvl, apy, age, capacity, verified, almostFull, full }: any) {
+// Animation variants for the card entrance
+const cardVariants: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.4,
+      ease: "easeOut", // Use a cubic-bezier easing function
+    },
+  },
+  hover: {
+    y: -6,
+    scale: 1.02,
+    boxShadow: "0px 15px 25px -5px rgba(0,0,0,0.08), 0px 10px 10px -5px rgba(0,0,0,0.02)",
+    // The spring transition is now part of the hover variant itself
+    transition: { type: "spring", stiffness: 300, damping: 20 },
+  },
+}
+
+export function VaultCard({ name, risk, apy, tvl, slug, chartData }: { name: string; risk: "Low Risk" | "Medium Risk" | "High Risk"; apy: string; tvl: string; slug: string; chartData: any[] }) {
   const router = useRouter()
 
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
+  const riskStyles = {
+    "Low Risk": "text-green-800",
+    "Medium Risk": "text-yellow-800",
+    "High Risk": "text-red-800",
+  }
+
+  const chartColor = "#5D4037"
 
   return (
-    <div
+    <motion.div
+      variants={cardVariants}
       onClick={() => router.push(`/vaults/${slug}`)}
-      className="group cursor-pointer relative overflow-hidden
-                 rounded-xl transform transition-all duration-300 hover:scale-[1.02]"
+      // ENHANCEMENT: Added a subtle scale and a more pronounced shadow on hover
+      whileHover={{ y: -6, scale: 1.02, boxShadow: "0px 15px 25px -5px rgba(0,0,0,0.08), 0px 10px 10px -5px rgba(0,0,0,0.02)" }}
+      transition={{ type: "spring", stiffness: 300, damping: 20 }}
+      // ENHANCEMENT: Increased padding from p-5 to p-6 to make the card bigger
+      className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-6 cursor-pointer flex flex-col"
     >
-      <div className="absolute inset-0 glass-card border border-slate-600/30 group-hover:border-slate-400/50 transition-all duration-300" />
-
-      {/* Subtle hover glow effect */}
-      <div className="absolute inset-0 bg-gradient-to-b from-slate-300/0 to-transparent opacity-0 group-hover:opacity-5 transition-opacity duration-300 rounded-xl" />
-
-      <div className="p-6 relative z-10">
-        {/* Header with name and badges */}
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-50 mb-2">{name}</h3>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-400">{manager}</span>
-              {verified && (
-                <div className="badge-verified">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-                  <span className="text-xs font-medium text-slate-300">Verified</span>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 items-end">
-            {full && <span className="badge-full">FULL</span>}
-            {almostFull && !full && (
-              <span className="badge-almost-full flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" /> ALMOST FULL
-              </span>
-            )}
-          </div>
+      {/* Top section: Name, APY, Risk */}
+      <div className="flex justify-between items-start">
+        <div>
+          {/* ENHANCEMENT: Made the name bigger and bolder */}
+          <h3 className="text-xl font-bold text-[var(--foreground)]">{name}</h3>
+          {/* ENHANCEMENT: Made the APY bigger and bolder */}
+          <p className="text-3xl font-bold text-[var(--foreground)] mt-2">
+            {apy} <span className="text-lg font-medium text-[var(--foreground-secondary)]">APY</span>
+          </p>
         </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-6 pb-6 border-b border-slate-600/30">
-          <div>
-            <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">TVL</p>
-            <p className="text-2xl font-bold text-slate-50">{tvl}</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">90D APY</p>
-            <p
-              className={`text-2xl font-bold flex items-center gap-1.5 ${apy.startsWith("-") ? "text-red-400" : "text-emerald-400"}`}
-            >
-              {apy}
-              {!apy.startsWith("-") && <TrendingUp className="w-5 h-5" />}
-            </p>
-          </div>
-        </div>
-
-        {/* Metadata footer */}
-        <div className="flex justify-between items-center mb-6 text-xs">
-          <div>
-            <p className="text-slate-500 mb-0.5">Vault Age</p>
-            <p className="text-slate-300 font-medium">{age}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-slate-500 mb-0.5">Capacity</p>
-            <p className="text-slate-300 font-medium">{capacity}</p>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <div className="w-full bg-slate-700/30 rounded-full h-2.5 overflow-hidden border border-slate-700/50">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                full ? "bg-red-500" : almostFull ? "bg-amber-500" : "bg-blue-400"
-              }`}
-              style={{ width: `${capacity}%` }}
-            />
-          </div>
-        </div>
-
-        <button className="btn-primary mt-6 w-full group/btn">
-          <span className="group-hover/btn:translate-x-0.5 transition-transform duration-200">View Vault →</span>
-        </button>
+        <span
+          className={`bg-white px-3 py-1 text-xs font-medium rounded-full border border-[var(--border)] ${riskStyles[risk]}`}
+        >
+          {risk}
+        </span>
       </div>
-    </div>
+
+      {/* Graph Section */}
+      {/* ENHANCEMENT: Increased graph height and vertical margin for better spacing */}
+      <div className="h-32 my-6 flex-grow">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData}>
+            <defs>
+              <linearGradient id={`color-${slug}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={chartColor} stopOpacity={0.4} />
+                <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <YAxis domain={["dataMin - 10", "dataMax + 10"]} hide />
+            <Area type="monotone" dataKey="v" stroke={chartColor} strokeWidth={2.5} fill={`url(#color-${slug})`} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Bottom section: TVL and Button */}
+      <div className="border-t border-[var(--border)] pt-5">
+        <div className="flex justify-between items-center text-md mb-5">
+          <span className="text-[var(--foreground-secondary)]">TVL</span>
+          <span className="font-semibold text-[var(--foreground)]">{tvl}</span>
+        </div>
+
+        {/* --- ENHANCEMENT: New Animated Button --- */}
+        <motion.button
+          className="w-full bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold py-3 rounded-lg relative overflow-hidden group"
+        >
+          <span className="relative z-10 flex items-center justify-center gap-2">
+            View Vault
+            {/* Arrow icon that will appear on hover */}
+            <motion.span
+              initial={{ x: -10, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              className="absolute right-6 opacity-0 transition-all duration-300 ease-out group-hover:opacity-100"
+            >
+              <ArrowRight size={18} />
+            </motion.span>
+          </span>
+        </motion.button>
+      </div>
+    </motion.div>
   )
 }

@@ -1,235 +1,222 @@
 "use client"
+
+import { useState } from "react"
+import { useAccount } from "wagmi"
+import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from "recharts"
+import { TransactionModal } from "./TransactionModal"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
-import { useAccount } from "wagmi"
-import { useState } from "react" // Import useState
-import { ConnectWalletModal } from "../Wallet/ConnectWalletModal"
+import { motion, AnimatePresence, Variants } from "framer-motion" 
 
 const chartData = [
-  { date: "Mar 1", roi: -0.3 },
-  { date: "Mar 8", roi: -0.1 },
-  { date: "Mar 15", roi: 0.2 },
-  { date: "Mar 22", roi: 0.8 },
-  { date: "Mar 29", roi: 0.4 },
-  { date: "Apr 5", roi: 1.2 },
-  { date: "Apr 12", roi: 0.9 },
+  { name: "Jan", uv: 1200 }, { name: "Mar", uv: 2100 }, { name: "May", uv: 1800 },
+  { name: "Jul", uv: 800 }, { name: "Sep", uv: 3200 }, { name: "Nov", uv: 2500 },
 ]
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1, // This will make each child animate 0.1s after the previous one
+      ease: "easeOut",
+    },
+  },
+}
 
-export function VaultDetail({
-  name,
-  manager,
-  tvl,
-  apy,
-  age,
-  capacity,
-  maxDrawdown,
-  tradingVolume,
-  roi,
-  sharePrice,
-  vaultBalance,
-}: any) {
-  const isNegative = apy.startsWith("-")
+const itemVariants: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } },
+}
+
+// Themed StatCard component
+const StatCard = ({ label, value }: { label: string; value: string }) => (
+  <div className="flex justify-between items-center py-3 border-b border-[var(--border)]">
+    <span className="text-md text-[var(--foreground-secondary)]">{label}</span>
+    <span className="text-md font-semibold text-[var(--foreground)]">{value}</span>
+  </div>
+)
+
+export function VaultDetail({ vault }: { vault: any }) {
   const { isConnected } = useAccount()
+  const [activeInfoTab, setActiveInfoTab] = useState("Overview")
+  const [timeRange, setTimeRange] = useState("1Y")
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [modalType, setModalType] = useState<"deposit" | "withdraw">("deposit")
 
-  // State to manage the active tab (deposit or withdraw)
-  const [activeTab, setActiveTab] = useState('deposit')
-  // State to manage the amount input
-  const [amount, setAmount] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Themed risk level styles with better contrast
+  const riskLevelStyles: { [key: string]: string } = {
+    Low: "text-green-800 bg-white",
+    Medium: "text-yellow-800 bg-white",
+    High: "text-red-800 bg-white",
+  }
 
-  // Function to handle the transaction logic
-  const handleTransaction = () => {
-    if (!isConnected) {
-       setIsModalOpen(true)
-        // Here you would typically trigger a wallet connection modal
-        return;
-    }
-    console.log(`Action: ${activeTab}, Amount: ${amount}`)
-    // Add your deposit or withdraw logic here based on the activeTab
+  const openModal = (type: "deposit" | "withdraw") => {
+    setModalType(type)
+    setIsModalOpen(true)
+  }
+
+  const handleTransactionSubmit = (amount: string, type: "deposit" | "withdraw") => {
+    console.log("Transaction Submitted:", { type, amount })
   }
 
   return (
     <>
-      <Link
-        href="/vaults"
-        className="inline-flex mt-4 items-center gap-2 text-slate-400 hover:text-slate-300 mb-10 transition-colors text-sm font-medium"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Vaults
+     <motion.div variants={containerVariants} initial="hidden" animate="visible">
+      <Link href="/vaults" className="inline-flex items-center gap-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] mb-8 text-md font-medium transition-colors">
+        <ArrowLeft size={16} />
+        Back to All Vaults
       </Link>
-
-      <div className="glass-card p-8 mb-10 border border-slate-600/40 bg-slate-900/40">
-        <div className="flex items-center justify-between gap-6 flex-wrap">
-          <div className="flex items-center gap-5">
-            <div className="w-14 h-14 bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl flex items-center justify-center text-2xl font-bold text-slate-300 shadow-lg border border-slate-600/50">
-              {name[0]}
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-slate-50 mb-1">{name}</h1>
-              <p className="text-sm text-slate-400">
-                Managed by <span className="font-semibold text-slate-300">{manager}</span> • Verified Strategy
-              </p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-slate-500 mb-1 uppercase tracking-wider">Deposit Asset</p>
-            <p className="text-xl font-bold text-slate-300">JitoSOL</p>
-          </div>
-        </div>
+      </motion.div>
+      <motion.div 
+        variants={itemVariants} 
+        initial="hidden" 
+        animate="visible"
+        // Add a small delay so it animates after the "Back" link
+        transition={{ duration: 0.5, ease: "easeOut", delay: 0.1 }}
+      >
+      <div className="flex items-center gap-4 mb-8">
+        <div className="w-12 h-12 bg-[var(--secondary)] shadow-[var(--shadow-card)] rounded-lg" />
+        <h1 className="text-4xl font-semibold text-[var(--foreground)]">{vault.name}</h1>
       </div>
+      </motion.div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-8">
         {/* Left Column */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: "APY (90D)", value: apy, negative: isNegative },
-              { label: "Vault Age", value: age },
-              { label: "Total Value Locked", value: tvl },
-              { label: "Vault Capacity", value: capacity },
-            ].map((stat, i) => (
-              <div
-                key={i}
-                className="glass-card p-5 text-center border border-slate-600/30 hover:border-slate-500/50 transition-colors"
-              >
-                <p className="text-xs text-slate-500 mb-2.5 uppercase tracking-widest font-semibold">{stat.label}</p>
-                <p className={`text-xl font-bold ${stat.negative ? "text-red-400" : "text-slate-50"}`}>{stat.value}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="glass-card p-8 border border-slate-600/30 bg-slate-900/30">
-            <h2 className="text-xl font-bold text-slate-50 mb-6">Performance Breakdown</h2>
-            <div className="grid grid-cols-2 gap-6 mb-8">
+        <motion.div 
+          className="lg:col-span-2 space-y-8"
+          // Animate the entire column as a single block
+          variants={itemVariants} 
+          initial="hidden" 
+          animate="visible"
+          transition={{ duration: 0.5, ease: "easeOut", delay: 0.2 }}
+        >
+        <div className="lg:col-span-2 space-y-8">
+          <div className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-6">
+            <div className="flex justify-between items-start mb-2 flex-wrap gap-4">
               <div>
-                <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider font-semibold">Max Daily Drawdown</p>
-                <p className="text-3xl font-bold text-red-400">{maxDrawdown}</p>
+                <p className="text-md text-[var(--foreground-secondary)]">Vault Performance</p>
+                <p className="text-3xl font-semibold text-[var(--foreground)]">{vault.balance}</p>
+                <p className="text-md font-medium text-green-700">{vault.performance} Past 1Y</p>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider font-semibold">30D Trading Volume</p>
-                <p className="text-3xl font-bold text-slate-50">{tradingVolume}</p>
+              <div className="flex items-center bg-[var(--secondary)] shadow-[var(--shadow-card)] rounded-lg p-1 text-xs">
+                {["1D", "7D", "1M", "3M", "1Y", "ALL"].map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setTimeRange(range)}
+                    className={`px-3 py-1.5 rounded-md transition-colors ${
+                      timeRange === range ? "bg-white text-[var(--foreground)] shadow-sm" : "text-[var(--foreground-secondary)] hover:bg-white/60"
+                    }`}
+                  >
+                    {range}
+                  </button>
+                ))}
               </div>
             </div>
-
-            <div className="h-64 -mx-8 -mb-8 mt-6">
+            <div className="h-80 -ml-4">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <defs>
-                    <linearGradient id="colorRoi" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#06B6D4" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#06B6D4" stopOpacity={0} />
+                    <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                  <XAxis dataKey="date" stroke="#94A3B8" style={{ fontSize: "12px" }} />
-                  <YAxis stroke="#94A3B8" style={{ fontSize: "12px" }} />
                   <Tooltip
+                    cursor={{ stroke: "var(--primary)", strokeWidth: 1 }}
                     contentStyle={{
-                      background: "rgba(15, 23, 42, 0.98)",
-                      border: "1px solid #475569",
-                      borderRadius: "10px",
-                      backdropFilter: "blur(12px)",
-                      boxShadow: "0 8px 32px rgba(100, 116, 139, 0.1)",
+                      background: "var(--secondary)",
+                      borderColor: "var(--border)",
+                      borderRadius: "0.6rem",
+                      boxShadow: "var(--shadow-card)",
                     }}
-                    wrapperClassName="text-xs text-slate-200"
                   />
-                  <Area
-                    type="monotone"
-                    dataKey="roi"
-                    stroke="#06B6D4"
-                    strokeWidth={2.5}
-                    fillOpacity={1}
-                    fill="url(#colorRoi)"
-                  />
+                  <XAxis dataKey="name" stroke="var(--foreground-secondary)" fontSize={12} tickLine={false} axisLine={false} />
+                  <Area type="monotone" dataKey="uv" stroke="var(--primary)" strokeWidth={2.5} fill="url(#chartGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
-        </div>
 
-        {/* Right Column - Deposit Panel */}
-        <div className="space-y-4">
-          <div className="glass-card p-6 border border-slate-600/40 bg-slate-900/40">
-            {/* Tab Buttons */}
-            <div className="flex gap-3 mb-6">
+          <div className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-6">
+            <div className="flex border-b border-[var(--border)] mb-6">
+              {["Overview", "Holdings", "My Transactions"].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveInfoTab(tab)}
+                  className={`pb-3 pt-1 mx-4 font-semibold text-md transition-colors ${
+                    activeInfoTab === tab
+                      ? "text-[var(--foreground)] border-b-2 border-[var(--primary)]"
+                      : "text-[var(--foreground-secondary)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg mb-3 text-[var(--foreground)]">Strategy</h3>
+              <p className="text-[var(--foreground-secondary)] text-md leading-relaxed">{vault.strategy}</p>
+            </div>
+          </div>
+        </div>
+        </motion.div>
+
+        {/* Right Column */}
+        <motion.div 
+          className="space-y-6"
+          // Animate this column with a slightly longer delay for a cascade effect
+          variants={itemVariants} 
+          initial="hidden" 
+          animate="visible"
+          transition={{ duration: 0.5, ease: "easeOut", delay: 0.3 }}
+        >
+
+        {/* Right Column */}
+        <div className="space-y-6">
+          <div className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-6">
+            <p className="text-md text-[var(--foreground-secondary)]">My Balance</p>
+            <p className="text-3xl font-semibold mb-1 text-[var(--foreground)]">{vault.userTotalBalance}</p>
+            <p className="text-md font-medium text-green-700">{vault.userTotalGain} All Time</p>
+            <div className="flex gap-4 mt-6">
               <button
-                onClick={() => setActiveTab('deposit')}
-                className={`flex-1 py-3 rounded-lg font-semibold text-sm transition-all duration-200 shadow-lg ${
-                  activeTab === 'deposit'
-                    ? 'bg-cyan-600 hover:bg-cyan-700 text-white hover:shadow-cyan-500/20'
-                    : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
-                }`}
+                onClick={() => openModal("deposit")}
+                className="flex-1 py-3 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg font-semibold text-md hover:opacity-90 transition-opacity"
               >
                 Deposit
               </button>
               <button
-                onClick={() => setActiveTab('withdraw')}
-                className={`flex-1 py-3 rounded-lg font-semibold text-sm transition-all duration-200 ${
-                  activeTab === 'withdraw'
-                    ? 'bg-cyan-600 hover:bg-cyan-700 text-white hover:shadow-cyan-500/20'
-                    : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
-                }`}
+                onClick={() => openModal("withdraw")}
+                className="flex-1 py-3 bg-[var(--secondary)] shadow-[var(--shadow-card)] text-[var(--secondary-foreground)] rounded-lg font-semibold text-md border border-[var(--border)] hover:bg-[var(--hover)] transition-colors"
               >
                 Withdraw
               </button>
             </div>
-
-            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-              Deposited funds are subject to a 3-day redemption period.
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-slate-500 mb-2 block uppercase tracking-wider font-semibold">
-                  Amount
-                </label>
-                <div className="flex">
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="flex-1 bg-slate-800/50 rounded-l-lg px-4 py-2.5 text-slate-50 text-sm font-medium placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 border border-slate-700/50"
-                  />
-                  <button className="px-4 bg-slate-700 hover:bg-slate-600 rounded-r-lg font-medium text-slate-200 text-sm transition-colors border border-slate-700/50 border-l-0">
-                    Max
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-slate-800/30 border border-slate-600/40 rounded-lg p-4">
-                <div className="flex justify-between mb-4">
-                  <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Balance</span>
-                  <span className="text-sm font-semibold text-slate-50">{vaultBalance}</span>
-                </div>
-
-                <button
-                  onClick={handleTransaction}
-                  className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 rounded-lg font-semibold text-white text-sm transition-all duration-200 shadow-lg hover:shadow-cyan-500/20 capitalize"
-                >
-                  {isConnected ? activeTab : "Connect Wallet"}
-                </button>
-              </div>
-            </div>
           </div>
-
-          <div className="glass-card p-6 border border-slate-600/30 bg-slate-900/30">
-            <h3 className="text-sm font-bold text-slate-50 mb-4 uppercase tracking-wider">Quick Stats</h3>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center pb-4 border-b border-slate-700/50">
-                <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">ROI</span>
-                <span className="text-lg font-bold text-emerald-400">{roi}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Share Price</span>
-                <span className="text-lg font-bold text-slate-50">{sharePrice}</span>
-              </div>
+          <div className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-6">
+            <StatCard label="APY" value={vault.apy} />
+            <StatCard label="Total Value Locked (TVL)" value={vault.tvl} />
+            <StatCard label="Management Fee" value={vault.managementFee} />
+            <StatCard label="Performance Fee" value={vault.performanceFee} />
+            <div className="flex justify-between items-center pt-3">
+              <span className="text-md text-[var(--foreground-secondary)]">Risk Level</span>
+              <span className={`font-medium px-3 py-1 rounded-full text-xs border border-[var(--border)] ${riskLevelStyles[vault.riskLevel]}`}>
+                {vault.riskLevel}
+              </span>
             </div>
           </div>
         </div>
+        </motion.div>
       </div>
-       {isModalOpen && <ConnectWalletModal onClose={() => setIsModalOpen(false)} />}
+
+      <AnimatePresence>
+      {isModalOpen && (
+        <TransactionModal
+          type={modalType}
+          onClose={() => setIsModalOpen(false)}
+          onSubmit={handleTransactionSubmit}
+        />
+      )}
+    </AnimatePresence>
     </>
   )
 }
