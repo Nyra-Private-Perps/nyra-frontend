@@ -19,20 +19,20 @@ const chartData = [
 
 // Data for the "Current Holdings" section
 const holdings = [
-  { icon: "/btc-icon.png", name: "Bitcoin", ticker: "BTC", price: "$50,321.80", amount: "0.75 BTC" },
-  { icon: "/eth-icon.png", name: "Ethereum", ticker: "ETH", price: "$35,123.45", amount: "10.2 ETH" },
-  { icon: "/ada-icon.png", name: "Cardano", ticker: "ADA", price: "$15,450.00", amount: "30,000 ADA" },
-  { icon: "/sol-icon.png", name: "Solana", ticker: "SOL", price: "$12,987.25", amount: "100 SOL" },
-  { icon: "/doge-icon.png", name: "Dogecoin", ticker: "DOGE", price: "$11,961.00", amount: "80,000 DOGE" },
+  { icon: "/btc-icon.png", name: "Bitcoin", ticker: "BTC", price: "$50,321.80", amount: "0 BTC" },
+  { icon: "/eth-icon.png", name: "Ethereum", ticker: "ETH", price: "$35,123.45", amount: "0 ETH" },
+  { icon: "/ada-icon.png", name: "Cardano", ticker: "ADA", price: "$15,450.00", amount: "0 ADA" },
+  { icon: "/sol-icon.png", name: "Solana", ticker: "SOL", price: "$12,987.25", amount: "0 SOL" },
+  { icon: "/doge-icon.png", name: "Dogecoin", ticker: "DOGE", price: "$11,961.00", amount: "0 DOGE" },
 ]
 
 // Data for the "Transaction History" table
 const transactions = [
-  { date: "2023-10-26 14:30", type: "Buy", asset: "Bitcoin (BTC)", amount: "+0.1 BTC", price: "$60,123.45", status: "Completed" },
+  { date: "2023-10-26 14:30", type: "Buy", asset: "Bitcoin (BTC)", amount: "+0+ BTC", price: "$60,123.45", status: "Completed" },
   { date: "2023-10-25 18:00", type: "Sell", asset: "Ethereum (ETH)", amount: "-2.0 ETH", price: "$3,450.00", status: "Completed" },
-  { date: "2023-10-24 09:15", type: "Deposit", asset: "USD", amount: "+$5,000.00", price: "-", status: "Completed" },
+  { date: "2023-10-24 09:15", type: "Deposit", asset: "USD", amount: "+$5", price: "-", status: "Completed" },
   { date: "2023-10-22 11:45", type: "Buy", asset: "Solana (SOL)", amount: "+10.0 SOL", price: "$125.50", status: "Pending" },
-  { date: "2023-10-20 20:05", type: "Withdrawal", asset: "USD", amount: "-$1,000.00", price: "-", status: "Failed" },
+  { date: "2023-10-20 20:05", type: "Withdrawal", asset: "USD", amount: "-$1.00", price: "-", status: "Failed" },
 ]
 
 const containerVariants: Variants = {

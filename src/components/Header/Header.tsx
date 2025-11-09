@@ -63,6 +63,9 @@ export function Header() {
           <Link href="/vaults" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
             Vaults
           </Link>
+          <Link href="/faucet" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
+            Faucet
+          </Link>
           <Link href="/profile" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
             Profile
           </Link>

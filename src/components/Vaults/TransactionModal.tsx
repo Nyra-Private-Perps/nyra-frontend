@@ -41,6 +41,9 @@ export function TransactionModal({ type, onClose, onSubmit }: TransactionModalPr
         className="bg-[var(--card)] border border-[var(--border)] rounded-lg w-full max-w-md p-6 m-4 text-[var(--foreground)] shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
+        <p className="text-sm text-center text-[var(--foreground-secondary)] mb-6 -mt-2">
+            Hope you have minted the awesome NYRA tokens!!
+          </p>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-semibold capitalize">{type} Funds</h2>
           <button onClick={onClose} className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors">

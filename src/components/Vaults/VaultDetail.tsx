@@ -1,12 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useAccount } from "wagmi"
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { TransactionModal } from "./TransactionModal"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Info } from "lucide-react"
 import Link from "next/link"
 import { motion, AnimatePresence, Variants } from "framer-motion"
+import { contractService } from "@/services/contractService"
+import { ErrorModal, InProgressModal, ModalWrapper, SuccessModal } from "../DepositAnimation/StatusModals"
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -53,6 +55,11 @@ export function VaultDetail({ vault }: { vault: Vault }) {
   const [timeRange, setTimeRange] = useState("1Y")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalType, setModalType] = useState<"deposit" | "withdraw">("deposit")
+  const [isTxModalOpen, setIsTxModalOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [isError, setIsError] = useState(false);
+  const [processingStep, setProcessingStep] = useState(0);
 
   // Generate dynamic strategy based on real vault data
   const strategy = `This vault uses ${vault.project} to trade ${vault.symbol} perpetuals. It employs automated risk management with dynamic leverage adjustment based on market volatility. The strategy aims for capital appreciation while preserving principal through TEE-secured execution.`
@@ -62,8 +69,8 @@ export function VaultDetail({ vault }: { vault: Vault }) {
 
   // User balance placeholders (connect wallet to see real)
   const userBalance = isConnected ? `$${Math.round(vault.tvlUsd * 0.001).toLocaleString()}` : "Connect Wallet"
-  const userTotalBalance = isConnected ? "$12,842.50" : "Connect Wallet"
-  const userTotalGain = isConnected ? "+$1,203.15 (+10.3%)" : "Connect to View"
+  const userTotalBalance = isConnected ? "$100" : "Connect Wallet"
+  const userTotalGain = isConnected ? "+$10 (+1.3%)" : "Connect to View"
 
   // Fees (realistic for perp vaults)
   const managementFee = "2%"
@@ -79,14 +86,92 @@ export function VaultDetail({ vault }: { vault: Vault }) {
     "High Risk": "text-red-800 bg-white",
   }
 
+  useEffect(() => {
+    if (!isConnected) return;
+
+    // Listener for when the 'approve' transaction is confirmed on-chain
+    const handleApproveConfirmed = (txHash: string) => {
+      console.log("Approve confirmed:", txHash);
+      setProcessingStep(2); // Move to step 3: "Confirm Deposit"
+    };
+
+    // Listener for when the 'deposit' transaction is confirmed on-chain
+    const handleDepositConfirmed = (txHash: string) => {
+      console.log("Deposit confirmed:", txHash);
+      setProcessingStep(4); // Move to step 4: "Deploying to Contract"
+      
+      // Simulate final deployment delay
+      setTimeout(() => {
+        setIsProcessing(false);
+        setIsSuccess(true);
+      }, 2000);
+    };
+
+    contractService.on("approveConfirmed", handleApproveConfirmed);
+    contractService.on("depositConfirmed", handleDepositConfirmed);
+
+    // Cleanup function to remove listeners when the component unmounts
+    return () => {
+      contractService.off("approveConfirmed", handleApproveConfirmed);
+      contractService.off("depositConfirmed", handleDepositConfirmed);
+    };
+  }, [isConnected]); // Re-run this effect if the wallet connection state changes
+
+
   const openModal = (type: "deposit" | "withdraw") => {
     setModalType(type)
     setIsModalOpen(true)
   }
 
-  const handleTransactionSubmit = (amount: string, type: "deposit" | "withdraw") => {
-    console.log("Transaction Submitted:", { type, amount })
-  }
+    const handleTransactionSubmit = async (amount: string, type: "deposit" | "withdraw") => {
+      setIsTxModalOpen(false); // Close the input modal
+      setIsProcessing(true);   // Open the in-progress modal
+      
+      try {
+        if (type === "deposit") {
+          setProcessingStep(1); // Start at step 1: "Approve NYRA Token"
+          const approveTx = await contractService.approveToken(amount);
+          
+          // After the user submits the transaction in their wallet, we move to the next step
+          setProcessingStep(2); // Step 2: "Approving NYRA Token" (waiting for confirmation)
+          
+          if (!approveTx) {
+            throw new Error("User rejected approval transaction");
+          }
+          setProcessingStep(3);
+          const depositTx = await contractService.depositAmount(amount);
+  
+          if (!depositTx) {
+             throw new Error("User rejected deposit transaction");
+          }
+          
+          // --- The 'useEffect' listener will handle moving to step 4 and success ---
+  
+        } else { // Handle Withdrawal
+          setProcessingStep(1); // Or define withdrawal-specific steps
+          const success = await contractService.withdrawAmount(amount);
+          if (!success) throw new Error("Withdrawal failed");
+          
+          setProcessingStep(4); // Or max withdrawal steps
+          // Simulate final delay
+          setTimeout(() => {
+            setIsProcessing(false);
+            setIsSuccess(true);
+          }, 1500);
+        }
+      } catch (error) {
+        console.error("Transaction failed:", error);
+        setIsProcessing(false);
+        setIsError(true);
+      }
+    };
+
+  const resetStatusModals = () => {
+    setIsSuccess(false);
+    setIsError(false);
+    setProcessingStep(0);
+  };
+
 
   return (
     <>
@@ -199,6 +284,10 @@ export function VaultDetail({ vault }: { vault: Vault }) {
             <p className="text-md text-[var(--foreground-secondary)]">My Balance</p>
             <p className="text-3xl font-semibold mb-1 text-[var(--foreground)]">{userTotalBalance}</p>
             <p className="text-md font-medium text-green-700">{userTotalGain} All Time</p>
+            <div className="flex items-center gap-2 text-xs text-center p-2 rounded-md bg-[var(--secondary)] text-[var(--foreground-secondary)] mt-6">
+            <Info size={14} />
+            <span>Mint your NYRA tokens from the Faucet before depositing.</span>
+          </div>
             <div className="flex gap-4 mt-6">
               <button
                 onClick={() => openModal("deposit")}
@@ -230,12 +319,34 @@ export function VaultDetail({ vault }: { vault: Vault }) {
       </div>
 
       <AnimatePresence>
-        {isModalOpen && (
+      {isModalOpen && (
           <TransactionModal
             type={modalType}
             onClose={() => setIsModalOpen(false)}
             onSubmit={handleTransactionSubmit}
           />
+        )}
+        {isTxModalOpen && (
+          <TransactionModal
+            type={modalType}
+            onClose={() => setIsTxModalOpen(false)}
+            onSubmit={handleTransactionSubmit}
+          />
+        )}
+        {isProcessing && (
+          <ModalWrapper>
+            <InProgressModal step={processingStep} maxSteps={4} />
+          </ModalWrapper>
+        )}
+        {isSuccess && (
+          <ModalWrapper>
+            <SuccessModal onClose={resetStatusModals} />
+          </ModalWrapper>
+        )}
+        {isError && (
+          <ModalWrapper>
+            <ErrorModal onClose={resetStatusModals} />
+          </ModalWrapper>
         )}
       </AnimatePresence>
     </>

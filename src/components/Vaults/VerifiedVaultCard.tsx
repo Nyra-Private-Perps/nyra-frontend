@@ -54,7 +54,7 @@ export function VaultCard({ name, risk, apy, tvl, slug, chartData }: VaultCardPr
       {/* Header */}
       <div className="flex justify-between items-start mb-4">
         <h3 className="text-xl font-bold text-[var(--foreground)] line-clamp-2">{name}</h3>
-        <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${getRiskStyle(risk)}`}>
+        <span className={`px-3 py-1 text-md w-[50%] font-semibold rounded-full border ${getRiskStyle(risk)}`}>
           {risk}
         </span>
       </div>

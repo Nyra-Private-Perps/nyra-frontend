@@ -144,7 +144,7 @@ export default function VaultsPage() {
             variants={containerVariants}
             initial="hidden"
             animate="visible"
-            className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+            className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 grid-auto-rows: 1fr"
           >
             {paginatedVaults.map((vault) => (
               <VaultCard
