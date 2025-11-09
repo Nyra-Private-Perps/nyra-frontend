@@ -6,14 +6,30 @@ import { useAccount, useSwitchChain } from "wagmi";
 import { horizenGobi } from "@/lib/chains"; // Import our new chain config
 import Confetti from 'react-confetti';
 import {
-  ArrowRight, Wallet, Globe, Activity, Droplets, Copy, CheckCircle2, Loader, PartyPopper
+  ArrowRight, Wallet, Globe, Activity, Droplets, Copy, CheckCircle2, Loader, PartyPopper, Shield, // Added Shield
+  Check
 } from "lucide-react";
 import { contractService } from "@/services/contractService";
 import Link from "next/link";
 
 // --- Animation Variants ---
-const containerVariants: Variants = { /* ... same as before ... */ };
-const itemVariants: Variants = { /* ... same as before ... */ };
+const containerVariants: Variants = { 
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      delayChildren: 0.3,
+      staggerChildren: 0.2,
+    },
+  },
+};
+const itemVariants: Variants = { 
+  hidden: { y: 20, opacity: 0 },
+  visible: {
+    y: 0,
+    opacity: 1,
+  },
+};
 const backdropVariants: Variants = { visible: { opacity: 1 }, hidden: { opacity: 0 } };
 const modalVariants: Variants = {
   hidden: { opacity: 0, y: 30, scale: 0.98 },
@@ -30,11 +46,6 @@ const DetailCard = ({ title, value, imgSrc, icon }: {
     <div className="bg-white p-4 rounded-lg border border-[var(--border)]">
       <p className="text-xs text-[var(--foreground-secondary)] mb-1">{title}</p>
       <div className="flex items-center gap-2">
-        {/* 
-          This is the corrected conditional logic:
-          - If 'imgSrc' exists (is "truthy"), render the Next.js Image component.
-          - Otherwise, render the 'icon' React component.
-        */}
         {imgSrc ? (
           <img src={imgSrc} alt={`${title} icon`} width={16} height={16} />
         ) : (
@@ -54,37 +65,124 @@ const LinkButton = ({ text, icon, href, isExternal }: { text: string; icon: Reac
       <ArrowRight className="w-5 h-5 text-[var(--foreground-secondary)]" />
     </a>
   );
-  const MintingProgressModal = () => {
-    const [step, setStep] = useState(1);
-  
-    useEffect(() => {
-        const handleFeeTransactionConfirmed = (txHash: string) => {
-            console.log("mint confirmed:", txHash);
-            setStep(2)
-          };
-        
-          contractService.on("mintConfirmed", handleFeeTransactionConfirmed);
-        
-          return () => {
-            contractService.off("mintConfirmed", handleFeeTransactionConfirmed);
-          };
-    //   const timer = setTimeout(() => setStep(2), 2500); // Move to step 2 after 2.5s
-    //   return () => clearTimeout(timer);
-    }, []);
+
+  // --- REVISED MintingProgressModal with shared animations and styling ---
+  const MintingProgressModal = ({ step }: { step: number }) => { // Pass step as prop
+    // Exact colors sampled from the previous image
+    const MODAL_BG = "#FDFCFB";
+    const MODAL_BORDER = "#E8E2DD";
+    const TEXT_COLOR = "#5C4E46";
+    const LIGHT_TEXT_COLOR = "#8F857D";
+    const SWIRL_LIGHT = "rgba(232, 220, 209, 0.4)"; // Faint light beige for swirl
+    const SWIRL_DARK = "rgba(180, 150, 120, 0.6)"; // Slightly darker for swirl effect
+    const SHIELD_INNER_BG = "#EDE7E1"; // Very light beige for shield circle
+    const SHIELD_ICON_COLOR = "#78655A"; // Darker brown for shield icon
+    const STEP_COMPLETED_BG = "#5BA65E"; // Green for completed step
+    const STEP_CURRENT_BG = "#8D6E63"; // Brown for current step (not used directly for spinner)
+    const STEP_PENDING_DOT = "#AFA59D"; // Grayish brown for pending dot
+    const LOADER_COLOR = "#5C4E46"; // Dark brown for loader
+
+    const stepsLabels = ["Approve mint function", "Minting your tokens"];
   
     return (
-      <motion.div variants={modalVariants} initial="hidden" animate="visible" exit="hidden" className="bg-[var(--secondary)] border border-[var(--border)] rounded-lg w-full max-w-sm p-8 text-[var(--foreground)] shadow-[var(--shadow-card)]">
-        <h2 className="text-xl font-semibold text-center text-[var(--foreground)] mb-6">Minting Your Tokens...</h2>
-        <div className="space-y-4">
-          <div className="flex items-center gap-4">
-            {step === 1 ? <Loader className="w-5 h-5 text-[var(--primary)] animate-spin" /> : <CheckCircle2 className="w-5 h-5 text-green-600" />}
-            <span className={`transition-colors ${step > 1 ? 'text-[var(--foreground-secondary)]' : 'text-[var(--foreground)]'}`}>Approve mint function</span>
-          </div>
-          <div className="flex items-center gap-4">
-            {step === 2 && <Loader className="w-5 h-5 text-[var(--primary)] animate-spin" />}
-            {step < 2 && <div className="w-5 h-5" />}
-            <span className={`transition-colors ${step < 2 ? 'text-[var(--foreground-secondary)]' : 'text-[var(--foreground)]'}`}>Minting your tokens</span>
-          </div>
+      <motion.div 
+        variants={modalVariants} 
+        initial="hidden" 
+        animate="visible" 
+        exit="hidden" 
+        className="rounded-[20px] w-full max-w-md p-7 shadow-xl overflow-hidden" // Matching style
+        style={{ 
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          backgroundColor: MODAL_BG,
+          border: `1px solid ${MODAL_BORDER}`
+        }} 
+      >
+        
+        {/* --- SWIRL ANIMATION: Soft radial light rays --- */}
+        <div className="relative h-48 w-full flex items-center justify-center mb-6 overflow-hidden rounded-full"> 
+          {/* Central radial glow */}
+          <div 
+            className="absolute inset-0 rounded-full" 
+            style={{ 
+              background: `radial-gradient(circle at center, ${SWIRL_LIGHT} 0%, rgba(253, 252, 251, 0) 60%)`,
+            }}
+          />
+
+          {/* Lighter, softer swirl lines - outer */}
+          <motion.div
+            className="absolute inset-0 rounded-full"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+            style={{
+              background: `radial-gradient(ellipse at center, transparent 0%, transparent 40%, ${SWIRL_LIGHT} 45%, rgba(253, 252, 251, 0) 70%)`,
+              filter: 'blur(3px)',
+              maskImage: 'radial-gradient(circle at center, transparent 30%, black 70%)',
+              WebkitMaskImage: 'radial-gradient(circle at center, transparent 30%, black 70%)',
+            }}
+          />
+          {/* Darker, more defined swirl lines - inner */}
+          <motion.div
+            className="absolute inset-0 rounded-full"
+            animate={{ rotate: -360 }}
+            transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
+            style={{
+              background: `radial-gradient(ellipse at center, transparent 0%, transparent 35%, ${SWIRL_DARK} 40%, rgba(253, 252, 251, 0) 60%)`,
+              filter: 'blur(2px)',
+              scale: 0.9,
+              maskImage: 'radial-gradient(circle at center, transparent 25%, black 65%)',
+              WebkitMaskImage: 'radial-gradient(circle at center, transparent 25%, black 65%)',
+            }}
+          />
+          
+          {/* Central Shield with faint glow and subtle pulse */}
+          <motion.div
+            animate={{ 
+              scale: [1, 1.03, 1], // Subtle pulse
+              y: [0, -1, 0] // Very gentle float
+            }}
+            transition={{ 
+              duration: 3.5, 
+              ease: "easeInOut", 
+              repeat: Infinity 
+            }}
+            className="relative z-10 flex items-center justify-center w-20 h-20 rounded-full" 
+            style={{
+              backgroundColor: SHIELD_INNER_BG,
+              border: `1px solid ${MODAL_BORDER}`,
+              boxShadow: `0 0 15px rgba(180, 150, 120, 0.4), inset 0 1px 3px rgba(255,255,255,0.7)`, 
+            }}
+          >
+            <Shield className="w-10 h-10" style={{ color: SHIELD_ICON_COLOR }} /> 
+          </motion.div>
+        </div>
+
+        {/* Title */}
+        <h2 className="text-xl font-semibold text-center mt-3 mb-6" style={{ color: TEXT_COLOR }}>Minting Your Tokens...</h2> 
+        
+        {/* Steps: Precise matching of icons/spacing */}
+        <div className="space-y-4"> 
+          {stepsLabels.map((label, index) => {
+            const stepNumber = index + 1;
+            const isCompleted = step > stepNumber;
+            const isCurrent = step === stepNumber;
+            
+            return (
+              <div key={index} className="flex items-center gap-4 text-base" style={{ color: isCurrent || isCompleted ? TEXT_COLOR : LIGHT_TEXT_COLOR }}> 
+                <div className={`flex items-center justify-center w-5 h-5 rounded-full`}> 
+                  {isCompleted ? (
+                    <Check className="w-4 h-4 text-white" style={{backgroundColor: STEP_COMPLETED_BG, borderRadius: '50%'}} /> 
+                  ) : isCurrent ? (
+                      <Loader className="w-4 h-4 animate-spin" style={{ color: LOADER_COLOR }} /> 
+                  ) : (
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: STEP_PENDING_DOT }} /> 
+                  )}
+                </div>
+                <span className={`font-medium`}>
+                  {label}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </motion.div>
     );
@@ -97,12 +195,14 @@ const LinkButton = ({ text, icon, href, isExternal }: { text: string; icon: Reac
         <PartyPopper className="w-16 h-16 mx-auto text-yellow-500" />
         <h2 className="text-2xl font-semibold text-[var(--foreground)] mt-4">Mint Successful!</h2>
         <p className="text-[var(--foreground-secondary)] mt-2">1,000 Testnet NYRA tokens have been sent to your wallet.</p>
+       <div className="flex gap-2">
         <Link href={'/vaults'} className="w-full mt-6 bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold py-2.5 rounded-lg hover:opacity-90 transition-opacity">
           Go to Vaults!
         </Link>
         <button onClick={onClose} className="w-full mt-6 bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold py-2.5 rounded-lg hover:opacity-90 transition-opacity">
           Awesome
         </button>
+        </div>
       </motion.div>
     );
   };
@@ -113,6 +213,26 @@ export default function FaucetPage() {
     const { switchChain } = useSwitchChain();
     const [isMinting, setIsMinting] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
+    const [mintStep, setMintStep] = useState(1); // State to control minting progress
+
+    useEffect(() => {
+      const handleMintConfirmed = (txHash: string) => {
+          console.log("Mint transaction confirmed:", txHash);
+          setMintStep(2); // Move to the second step (Minting your tokens)
+          // You might want to delay setting isSuccess here if the 'minting' takes time
+          setTimeout(() => {
+            setIsMinting(false);
+            setIsSuccess(true);
+            setMintStep(1); // Reset step for next mint
+          }, 3000); // Simulate network finalization and UI update
+      };
+      
+      contractService.on("mintConfirmed", handleMintConfirmed);
+      
+      return () => {
+        contractService.off("mintConfirmed", handleMintConfirmed);
+      };
+    }, []);
   
     const handleAddNetwork = () => {
       switchChain({ chainId: horizenGobi.id });
@@ -120,11 +240,17 @@ export default function FaucetPage() {
   
     const handleMint = async() => {
       setIsMinting(true);
-     const minttx= await contractService.mintToken();
-      setTimeout(() => {
-        setIsMinting(false);
-        setIsSuccess(true);
-      }, 5000);
+      setMintStep(1); // Start at the first step
+      // The contractService.mintToken() will eventually emit "mintConfirmed"
+      // which will then update the mintStep and eventually setIsSuccess
+      try {
+        await contractService.mintToken();
+      } catch (error) {
+        console.error("Minting failed:", error);
+        setIsMinting(false); // Stop minting on error
+        setMintStep(1); // Reset step
+        // Optionally show an error modal here
+      }
     };
     
     const handleCloseSuccess = () => {
@@ -270,7 +396,7 @@ export default function FaucetPage() {
         <AnimatePresence>
           {isMinting && (
             <motion.div key="backdrop" variants={backdropVariants} initial="hidden" animate="visible" exit="hidden" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-              <MintingProgressModal />
+              <MintingProgressModal step={mintStep} /> {/* Pass mintStep here */}
             </motion.div>
           )}
           {isSuccess && (
