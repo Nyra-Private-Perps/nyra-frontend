@@ -110,12 +110,12 @@ export function ProfileOverview() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] text-[var(--secondary-foreground)] font-semibold py-2 px-4 rounded-lg hover:bg-[var(--hover)] transition-colors">
+          {/* <button className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] text-[var(--secondary-foreground)] font-semibold py-2 px-4 rounded-lg hover:bg-[var(--hover)] transition-colors">
             Edit Profile
           </button>
           <button className="bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity">
             Settings
-          </button>
+          </button> */}
         </div>
       </motion.div>
 
@@ -130,7 +130,7 @@ export function ProfileOverview() {
               <p className="text-md font-medium text-green-700">+5.21% (+$6,231.12 in 24h)</p>
             </div>
             <div className="flex items-center bg-[var(--secondary)] shadow-[var(--shadow-card)] rounded-lg p-1 text-xs">
-              {["1D", "1W", "1M", "1Y", "ALL"].map((range) => (
+              {[ "1M", "ALL"].map((range) => (
                 <button
                   key={range}
                   onClick={() => setTimeRange(range)}

@@ -43,7 +43,7 @@ export const InProgressModal = ({ step, maxSteps }: { step: number; maxSteps: nu
     >
       
       {/* --- NEW SWIRL ANIMATION: Soft radial light rays --- */}
-      <div className="relative h-48 w-full flex items-center justify-center mb-6 overflow-hidden rounded-full"> {/* Taller for more space */}
+      <div className="relative h-48 w-full flex items-center justify-center mb-6 rounded-full"> {/* Taller for more space */}
         {/* Central radial glow */}
         <div 
           className="absolute inset-0 rounded-full" 
@@ -111,7 +111,7 @@ export const InProgressModal = ({ step, maxSteps }: { step: number; maxSteps: nu
           const isCurrent = step === stepNumber;
           
           return (
-            <div key={index} className="flex items-center gap-4 text-base" style={{ color: isCurrent || isCompleted ? TEXT_COLOR : LIGHT_TEXT_COLOR }}> {/* Larger text, increased gap, color by state */}
+            <div key={index} className="flex items-center gap-4 text-base" style={{ color: isCurrent || isCompleted ? TEXT_COLOR : LIGHT_TEXT_COLOR,fontWeight: isCompleted ?700:100 }}> {/* Larger text, increased gap, color by state */}
               <div className={`flex items-center justify-center w-5 h-5 rounded-full`}> {/* Larger icon circles */}
                 {isCompleted ? (
                   <Check className="w-4 h-4 text-white" style={{backgroundColor: STEP_COMPLETED_BG, borderRadius: '50%'}} /> // Green background for check

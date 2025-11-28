@@ -29,9 +29,9 @@ type VaultCardProps = {
 
 // FIXED: Proper typed risk styles
 const riskStyles: Record<string, string> = {
-  "Low Risk": "text-green-800 bg-green-50 border-green-200",
-  "Medium Risk": "text-yellow-800 bg-yellow-50 border-yellow-200",
-  "High Risk": "text-red-800 bg-red-50 border-red-200",
+  "Low Risk": "text-green-800 bg-green-50 border-green-200 text-center",
+  "Medium Risk": "text-yellow-800 bg-yellow-50 border-yellow-200 text-center",
+  "High Risk": "text-red-800 bg-red-50 border-red-200 text-center",
 }
 const getRiskStyle = (risk: string): string => {
   return riskStyles[risk] || "text-gray-800 bg-gray-50 border-gray-200"
@@ -54,7 +54,7 @@ export function VaultCard({ name, risk, apy, tvl, slug, chartData }: VaultCardPr
       {/* Header */}
       <div className="flex justify-between items-start mb-4">
         <h3 className="text-xl font-bold text-[var(--foreground)] line-clamp-2">{name}</h3>
-        <span className={`px-3 py-1 text-md w-[50%] font-semibold rounded-full border ${getRiskStyle(risk)}`}>
+        <span className={`px-3 py-1 text-sm w-[40%] font-semibold rounded-full border ${getRiskStyle(risk)}`}>
           {risk}
         </span>
       </div>

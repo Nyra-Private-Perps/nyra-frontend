@@ -28,7 +28,7 @@ export default async function VaultPage({ params }: { params: Promise<{ slug: st
     <div className="bg-[var(--background)] min-h-screen">
       <Header />
       <main className="pt-28 pb-20 px-6">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           <VaultDetail vault={vault} />
         </div>
       </main>

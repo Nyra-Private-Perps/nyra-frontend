@@ -1,27 +1,32 @@
-import { ethers } from 'ethers';
+// src/services/contractService.ts
+
+import { ethers, BrowserProvider, Contract, ContractTransactionResponse } from 'ethers';
 import { EventEmitter } from "eventemitter3";
 
-const CONTRACT_ADDRESS=process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
-const TOKEN_ADDRESS=process.env.NEXT_PUBLIC_TOKEN_ADDRESS || "";
-const CONTRACT_ABI:any=[
-  "function deposit(address token, uint256 amount) external"
-]
-const FAUCET_CONTRACT_ABI:any=[
+// --- Configuration ---
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
+const TOKEN_ADDRESS = process.env.NEXT_PUBLIC_TOKEN_ADDRESS || "";
+
+// --- ABIs ---
+const VAULT_ABI = [
+  "function deposit(address token, uint256 amount) external",
+  "function withdraw(uint256 amount) external" // Assuming withdraw takes amount, adjust if it takes shares
+];
+
+const FAUCET_ABI = [
   "function mint() external"
-]
+];
+
 const ERC20_ABI = [
-  // Functions
   "function name() view returns (string)",
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
   "function totalSupply() view returns (uint256)",
   "function balanceOf(address account) view returns (uint256)",
-  "function transfer(address to, uint256 amount) returns (bool)",
   "function allowance(address owner, address spender) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
+  "function transfer(address to, uint256 amount) returns (bool)",
   "function transferFrom(address from, address to, uint256 amount) returns (bool)",
-
-  // Events
   "event Transfer(address indexed from, address indexed to, uint256 value)",
   "event Approval(address indexed owner, address indexed spender, uint256 value)"
 ];
@@ -29,161 +34,156 @@ const ERC20_ABI = [
 class ContractService {
   private emitter = new EventEmitter();
 
-   // Emit an event
-   emit(event: string, ...args: any[]) {
+  // --- Event Management ---
+  emit(event: string, ...args: any[]) {
     this.emitter.emit(event, ...args);
   }
 
-  // Listen for an event
   on(event: string, listener: (...args: any[]) => void) {
     this.emitter.on(event, listener);
   }
 
-  // Remove listener
   off(event: string, listener: (...args: any[]) => void) {
     this.emitter.off(event, listener);
   }
-  //Mint token
-  async mintToken(
-  ): Promise<string> {
-    const provider = new ethers.BrowserProvider(window.ethereum);
 
+  // --- Helper: Secure Signer Retrieval ---
+  private async getSigner() {
+    if (typeof window === 'undefined' || !window.ethereum) {
+      throw new Error("No crypto wallet found. Please install Metamask or a compatible wallet.");
+    }
+
+    // Validate Environment Variables
+    if (!ethers.isAddress(TOKEN_ADDRESS)) {
+      throw new Error("Invalid Token Contract Address defined in environment variables.");
+    }
+
+    const provider = new BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
-    if (!signer) {
-      throw new Error("Signer required for campaign creation");
-    }
-  
-    const faucetContract = new ethers.Contract(
-      TOKEN_ADDRESS,
-      FAUCET_CONTRACT_ABI,
-      signer
-    );
-    const minttx = await faucetContract.mint();
-     const txHash = minttx.hash;
-      this.emitter.emit("mintConfirmed", txHash); // Emit event
-    const mintreciept = await minttx.wait();
-    console.log(mintreciept, "appreceipt");
-    if(!mintreciept){
-      throw new Error("Approval failed");
-    }
-    
-   
-    if (mintreciept) {
-     
-      return mintreciept;
-    }
-
-    throw new Error("Campaign creation failed - no event found");
-  }
-    
-
-  //Approve deposit token
-    async approveToken(
-      amount: string
-    ): Promise<string> {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-
-      const signer = await provider.getSigner();
-      if (!signer) {
-        throw new Error("Signer required for campaign creation");
-      }
-    
-      const erc20 = new ethers.Contract(
-        TOKEN_ADDRESS,
-        ERC20_ABI,
-        signer
-      );
-      const apprtx = await erc20.approve(
-        CONTRACT_ADDRESS,
-        ethers.parseUnits(amount, await erc20.decimals())
-      );
-      const txHash = apprtx.hash;
-      this.emitter.emit("approveConfirmed", txHash);
-      const appreceipt = await apprtx.wait();
-      console.log(appreceipt, "appreceipt");
-      if(!appreceipt){
-        throw new Error("Approval failed");
-      }
-      
-     
-      if (appreceipt) {
-       
-        return appreceipt;
-      }
-  
-      throw new Error("Campaign creation failed - no event found");
-    }
-      
-   // Deposit amount into vault
-   
-  async depositAmount(
-    amount: any 
-  ): Promise<string> {
-    const provider = new ethers.BrowserProvider(window.ethereum);
-
-    const signer = await provider.getSigner();
-    if (!signer) {
-      throw new Error("Signer required for campaign creation");
-    }
-
-    const erc20 = new ethers.Contract(
-      TOKEN_ADDRESS,
-      ERC20_ABI,
-      signer
-    );
-    const depositcontract = new ethers.Contract(
-      CONTRACT_ADDRESS,
-      CONTRACT_ABI,
-      signer
-    );
-    const depositData={
-      token: TOKEN_ADDRESS,
-      amount:  ethers.parseUnits(amount, await erc20.decimals())
-    }
-    const tx = await depositcontract.deposit(
-        TOKEN_ADDRESS, ethers.parseUnits(amount, await erc20.decimals())
-    );
-    const txHash = tx.hash;
-    this.emitter.emit("depositConfirmed", txHash);
-    const receipt = await tx.wait();
-    // Extract campaign address from event
-    console.log("receipt", receipt);
-
-    if (receipt) {
-      return 'Success';
-    }
-    throw new Error("Deposit failed - no event found");
+    return signer;
   }
 
-  //withdraw amount from vault
-  async withdrawAmount(
-    withdrawData: any 
-  ): Promise<string> {
-    const provider = new ethers.BrowserProvider(window.ethereum);
+  // --- 1. Mint Token (Faucet) ---
+  async mintToken(): Promise<string> {
+    try {
+      const signer = await this.getSigner();
+      const faucetContract = new Contract(TOKEN_ADDRESS, FAUCET_ABI, signer);
 
-    const signer = await provider.getSigner();
-    if (!signer) {
-      throw new Error("Signer required for campaign creation");
+      // Send Transaction
+      const tx = await faucetContract.mint() as ContractTransactionResponse;
+      const txHash = tx.hash;
+      
+      // Emit 'confirmed' immediately so UI shows "Mining..."
+      this.emitter.emit("mintConfirmed", txHash);
+
+      // Wait for block confirmation
+      const receipt = await tx.wait();
+      
+      if (!receipt || receipt.status === 0) {
+        throw new Error("Mint transaction reverted on-chain.");
+      }
+
+      return txHash;
+    } catch (error: any) {
+      console.error("Minting Error:", error);
+      throw new Error(error.shortMessage || error.message || "Minting failed");
     }
+  }
 
+  // --- 2. Approve Token ---
+  async approveToken(amount: string): Promise<string> {
+    try {
+      if (!ethers.isAddress(CONTRACT_ADDRESS)) {
+        throw new Error("Invalid Vault Contract Address.");
+      }
 
-    const withdrawcontract = new ethers.Contract(
-      CONTRACT_ADDRESS,
-      CONTRACT_ABI,
-      signer
-    );
-    
-    const tx = await withdrawcontract.withdraw(
-        withdrawData
-    );
-    const receipt = await tx.wait();
-    // Extract campaign address from event
-    console.log("receipt", receipt);
+      const signer = await this.getSigner();
+      const erc20 = new Contract(TOKEN_ADDRESS, ERC20_ABI, signer);
+      
+      // Fetch decimals dynamically for precision
+      const decimals = await erc20.decimals();
+      const parsedAmount = ethers.parseUnits(amount, decimals);
 
-    if (receipt) {
-      return 'Success';
+      const tx = await erc20.approve(CONTRACT_ADDRESS, parsedAmount) as ContractTransactionResponse;
+      
+      this.emitter.emit("approveConfirmed", tx.hash);
+      
+      const receipt = await tx.wait();
+      
+      if (!receipt || receipt.status === 0) {
+        throw new Error("Approval transaction reverted.");
+      }
+
+      return tx.hash;
+    } catch (error: any) {
+      console.error("Approval Error:", error);
+      throw new Error(error.shortMessage || error.message || "Approval failed");
     }
-    throw new Error("Withdraw failed - no event found");
+  }
+
+  // --- 3. Deposit to Vault ---
+  async depositAmount(amount: string): Promise<string> {
+    try {
+      const signer = await this.getSigner();
+      
+      // We need decimals again to ensure we deposit the exact approved amount
+      const erc20 = new Contract(TOKEN_ADDRESS, ERC20_ABI, signer);
+      const decimals = await erc20.decimals();
+      const parsedAmount = ethers.parseUnits(amount, decimals);
+
+      const vaultContract = new Contract(CONTRACT_ADDRESS, VAULT_ABI, signer);
+
+      // Check allowance first to prevent gas waste
+      const allowance = await erc20.allowance(await signer.getAddress(), CONTRACT_ADDRESS);
+      if (allowance < parsedAmount) {
+        throw new Error("Insufficient allowance. Please approve tokens first.");
+      }
+
+      const tx = await vaultContract.deposit(TOKEN_ADDRESS, parsedAmount) as ContractTransactionResponse;
+      
+      this.emitter.emit("depositConfirmed", tx.hash);
+      
+      const receipt = await tx.wait();
+
+      if (!receipt || receipt.status === 0) {
+        throw new Error("Deposit transaction reverted.");
+      }
+
+      return tx.hash;
+    } catch (error: any) {
+      console.error("Deposit Error:", error);
+      throw new Error(error.shortMessage || error.message || "Deposit failed");
+    }
+  }
+
+  // --- 4. Withdraw from Vault ---
+  async withdrawAmount(amount: string): Promise<string> {
+    try {
+      const signer = await this.getSigner();
+      
+      // Assuming withdraw takes raw units. 
+      // If your vault uses 'shares' instead of token amounts, logic might differ slightly.
+      const erc20 = new Contract(TOKEN_ADDRESS, ERC20_ABI, signer);
+      const decimals = await erc20.decimals();
+      const parsedAmount = ethers.parseUnits(amount, decimals);
+
+      const vaultContract = new Contract(CONTRACT_ADDRESS, VAULT_ABI, signer);
+
+      const tx = await vaultContract.withdraw(parsedAmount) as ContractTransactionResponse;
+      
+      this.emitter.emit("withdrawConfirmed", tx.hash); // Added specific event for withdraw
+      
+      const receipt = await tx.wait();
+
+      if (!receipt || receipt.status === 0) {
+        throw new Error("Withdraw transaction reverted.");
+      }
+
+      return tx.hash;
+    } catch (error: any) {
+      console.error("Withdraw Error:", error);
+      throw new Error(error.shortMessage || error.message || "Withdrawal failed");
+    }
   }
 }
 

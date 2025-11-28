@@ -47,7 +47,7 @@ const DetailCard = ({ title, value, imgSrc, icon }: {
       <p className="text-xs text-[var(--foreground-secondary)] mb-1">{title}</p>
       <div className="flex items-center gap-2">
         {imgSrc ? (
-          <img src={imgSrc} alt={`${title} icon`} width={16} height={16} />
+          <img src={imgSrc} alt={`${title} icon`} width={40} height={40} />
         ) : (
           icon 
         )}
@@ -99,7 +99,7 @@ const LinkButton = ({ text, icon, href, isExternal }: { text: string; icon: Reac
       >
         
         {/* --- SWIRL ANIMATION: Soft radial light rays --- */}
-        <div className="relative h-48 w-full flex items-center justify-center mb-6 overflow-hidden rounded-full"> 
+        <div className="relative h-48 w-full flex items-center justify-center mb-6 rounded-full"> 
           {/* Central radial glow */}
           <div 
             className="absolute inset-0 rounded-full" 
@@ -112,7 +112,7 @@ const LinkButton = ({ text, icon, href, isExternal }: { text: string; icon: Reac
           <motion.div
             className="absolute inset-0 rounded-full"
             animate={{ rotate: 360 }}
-            transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
             style={{
               background: `radial-gradient(ellipse at center, transparent 0%, transparent 40%, ${SWIRL_LIGHT} 45%, rgba(253, 252, 251, 0) 70%)`,
               filter: 'blur(3px)',
@@ -124,7 +124,7 @@ const LinkButton = ({ text, icon, href, isExternal }: { text: string; icon: Reac
           <motion.div
             className="absolute inset-0 rounded-full"
             animate={{ rotate: -360 }}
-            transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
+            transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
             style={{
               background: `radial-gradient(ellipse at center, transparent 0%, transparent 35%, ${SWIRL_DARK} 40%, rgba(253, 252, 251, 0) 60%)`,
               filter: 'blur(2px)',
@@ -167,7 +167,7 @@ const LinkButton = ({ text, icon, href, isExternal }: { text: string; icon: Reac
             const isCurrent = step === stepNumber;
             
             return (
-              <div key={index} className="flex items-center gap-4 text-base" style={{ color: isCurrent || isCompleted ? TEXT_COLOR : LIGHT_TEXT_COLOR }}> 
+              <div key={index} className="flex items-center gap-4 text-base" style={{ color: isCurrent || isCompleted ? TEXT_COLOR : LIGHT_TEXT_COLOR,fontWeight: isCompleted ?700:100 }}> 
                 <div className={`flex items-center justify-center w-5 h-5 rounded-full`}> 
                   {isCompleted ? (
                     <Check className="w-4 h-4 text-white" style={{backgroundColor: STEP_COMPLETED_BG, borderRadius: '50%'}} /> 
@@ -262,17 +262,16 @@ export default function FaucetPage() {
         {isSuccess && <Confetti recycle={false} numberOfPieces={400} />}
         <Header />
         <main className="py-12 px-6">
-          <motion.div variants={containerVariants} initial="hidden" animate="visible" className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          <motion.div variants={containerVariants}  className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             {/* --- Left Decorative Column --- */}
         
     {/* --- THIS IS THE NEW, ENHANCED DECORATIVE COLUMN --- */}
-    <motion.div 
+    {/* <motion.div 
       variants={itemVariants} 
       // 1. We need a relative container for layering the background and logo
       className="hidden lg:block relative bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg aspect-[3/4] overflow-hidden"
     >
-      {/* 2. Animated Background Pattern */}
-      {/* This SVG creates a grid of dots and slowly pans it back and forth */}
+   
       <motion.svg
         className="absolute inset-0 w-full h-full z-0"
         xmlns="http://www.w3.org/2000/svg"
@@ -298,8 +297,6 @@ export default function FaucetPage() {
         <rect width="100%" height="100%" fill="url(#pattern-grid)" />
       </motion.svg>
 
-      {/* 3. Floating Logo in the Center */}
-      {/* This div centers the logo and places it on top of the background */}
       <div className="relative z-10 w-full h-full flex items-center justify-center">
         <motion.div
           // Add a subtle floating animation to the logo
@@ -311,19 +308,19 @@ export default function FaucetPage() {
             repeatType: "mirror",
           }}
           // Add a drop shadow to lift the logo off the background
-          className="w-32 h-32 filter drop-shadow-2xl" 
+          className="w-50 h-50 filter drop-shadow-2xl" 
         >
           <img 
             src="/logo.png" 
             alt="Nyra Logo" 
-            width={128} 
-            height={128}
+            width={200} 
+            height={200}
             className="object-contain"
           />
         </motion.div>
       </div>
-    </motion.div>
-            <div className="lg:col-span-2 space-y-8">
+    </motion.div> */}
+            <div className="lg:col-span-3 space-y-8">
               <motion.div variants={itemVariants} className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-8">
                 <h1 className="text-3xl font-bold tracking-wider uppercase text-[var(--foreground)]">{horizenGobi.name}</h1>
                 <button onClick={handleAddNetwork} className="w-full mt-6 bg-[var(--primary)] text-white font-semibold py-2.5 px-6 rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
@@ -336,7 +333,7 @@ export default function FaucetPage() {
   
               <motion.div variants={itemVariants} className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-8">
                 <h2 className="text-xl font-bold flex items-center gap-3 text-[var(--foreground)] mb-6">
-                  <img src="/logo.png" alt="" width={40} height={40}/> NYRA Faucet
+                  NYRA Faucet
                 </h2>
                 {isConnected && address ? (
                   <>
@@ -374,7 +371,7 @@ export default function FaucetPage() {
                     <DetailCard title="Native Token" value="$NYRA" icon={<Droplets size={16} />} imgSrc="/logo.png"/>
                     <DetailCard title="Settlement Layer" value="Base Sepolia" icon={<Activity size={16} />} imgSrc="" />
                 </div>
-                <div className="mt-6 border-t border-[var(--border)] pt-6">
+                <div className="mt-6 border-t border-[var(--border)] pt-4">
                     <h3 className="text-sm font-semibold text-[var(--foreground)] mb-4">URLs</h3>
                     <div className="space-y-3 text-sm">
                         <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-[var(--border)]">

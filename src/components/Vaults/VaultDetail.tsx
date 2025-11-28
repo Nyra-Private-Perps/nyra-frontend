@@ -49,9 +49,57 @@ type Vault = {
   tvlUsd: number
 }
 
+const HoldingsTable = () => (
+  <div>
+    <table className="w-full text-sm text-left">
+      <thead className="text-xs text-[var(--foreground-secondary)]/80 uppercase">
+        <tr>
+          <th scope="col" className="px-6 py-3 font-medium">Token</th>
+          <th scope="col" className="px-6 py-3 font-medium">Value</th>
+          <th scope="col" className="px-6 py-3 font-medium text-right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {/* Empty state message */}
+        <tr>
+          <td colSpan={3} className="text-center py-10 px-6 text-[var(--foreground-secondary)]">
+            You do not have any holdings in this vault yet.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+);
+
+const TransactionsTable = () => (
+  <div>
+    <table className="w-full text-sm text-left">
+      <thead className="text-xs text-[var(--foreground-secondary)]/80 uppercase">
+        <tr>
+          <th scope="col" className="px-6 py-3 font-medium">Date</th>
+          <th scope="col" className="px-6 py-3 font-medium">Type</th>
+          <th scope="col" className="px-6 py-3 font-medium">Asset</th>
+          <th scope="col" className="px-6 py-3 font-medium">Amount</th>
+          <th scope="col" className="px-6 py-3 font-medium">Price</th>
+          <th scope="col" className="px-6 py-3 font-medium text-right">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {/* Empty state message */}
+        <tr>
+          <td colSpan={6} className="text-center py-10 px-6 text-[var(--foreground-secondary)]">
+            You have no transactions for this vault yet.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+);
+
+
 export function VaultDetail({ vault }: { vault: Vault }) {
   const { isConnected } = useAccount()
-  const [activeInfoTab, setActiveInfoTab] = useState("Overview")
+  const [activeInfoTab, setActiveInfoTab] = useState<"Overview" | "Holdings" | "My Transactions">("Overview")
   const [timeRange, setTimeRange] = useState("1Y")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalType, setModalType] = useState<"deposit" | "withdraw">("deposit")
@@ -61,11 +109,11 @@ export function VaultDetail({ vault }: { vault: Vault }) {
   const [isError, setIsError] = useState(false);
   const [processingStep, setProcessingStep] = useState(0);
 
+  // ADDED: State for client-side performance display
+  const [displayPerformance, setDisplayPerformance] = useState("");
+
   // Generate dynamic strategy based on real vault data
   const strategy = `This vault uses ${vault.project} to trade ${vault.symbol} perpetuals. It employs automated risk management with dynamic leverage adjustment based on market volatility. The strategy aims for capital appreciation while preserving principal through TEE-secured execution.`
-
-  // Realistic performance from chartData (last value as "performance")
-  const performance = `+${(vault.apyRaw * (Math.random() * 0.5 + 0.5)).toFixed(1)}%`
 
   // User balance placeholders (connect wallet to see real)
   const userBalance = isConnected ? `$${Math.round(vault.tvlUsd * 0.001).toLocaleString()}` : "Connect Wallet"
@@ -73,8 +121,8 @@ export function VaultDetail({ vault }: { vault: Vault }) {
   const userTotalGain = isConnected ? "+$10 (+1.3%)" : "Connect to View"
 
   // Fees (realistic for perp vaults)
-  const managementFee = "2%"
-  const performanceFee = "20%"
+  // const managementFee = "2%"
+  // const performanceFee = "20%"
 
   // Use real chartData from props
   const chartData = vault.chartData.map((d, i) => ({ name: `Day ${i + 1}`, uv: d.v }))
@@ -85,6 +133,12 @@ export function VaultDetail({ vault }: { vault: Vault }) {
     "Medium Risk": "text-yellow-800 bg-white",
     "High Risk": "text-red-800 bg-white",
   }
+
+  // ADDED: useEffect to calculate performance client-side
+  useEffect(() => {
+    const calculatedPerformance = `+${(vault.apyRaw * (Math.random() * 0.5 + 0.5)).toFixed(1)}%`;
+    setDisplayPerformance(calculatedPerformance);
+  }, [vault.apyRaw]); // Dependency on apyRaw to recalculate if it changes
 
   useEffect(() => {
     if (!isConnected) return;
@@ -189,7 +243,6 @@ export function VaultDetail({ vault }: { vault: Vault }) {
         transition={{ duration: 0.5, ease: "easeOut", delay: 0.1 }}
       >
         <div className="flex items-center gap-4 mb-8">
-          <div className="w-12 h-12 bg-[var(--secondary)] shadow-[var(--shadow-card)] rounded-lg" />
           <h1 className="text-4xl font-semibold text-[var(--foreground)]">{vault.name}</h1>
         </div>
       </motion.div>
@@ -206,12 +259,14 @@ export function VaultDetail({ vault }: { vault: Vault }) {
           <div className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-6">
             <div className="flex justify-between items-start mb-2 flex-wrap gap-4">
               <div>
-                <p className="text-md text-[var(--foreground-secondary)]">Vault Performance</p>
+                <p className="text-lg text-[var(--foreground-secondary)]">Vault Performance</p>
                 <p className="text-3xl font-semibold text-[var(--foreground)]">{userBalance}</p>
-                <p className="text-md font-medium text-green-700">{performance} Past 1Y</p>
+                {/* MODIFIED: Use displayPerformance */}
+                <p className="text-md font-medium text-green-700">{displayPerformance} Past 1Y</p>
               </div>
               <div className="flex items-center bg-[var(--secondary)] shadow-[var(--shadow-card)] rounded-lg p-1 text-xs">
-                {["1D", "7D", "1M", "3M", "1Y", "ALL"].map((range) => (
+                {/* {["1D", "7D", "1M", "3M", "1Y", "ALL"].map((range) => ( */}
+                {[ "1M", "ALL"].map((range) => (
                   <button
                     key={range}
                     onClick={() => setTimeRange(range)}
@@ -251,11 +306,11 @@ export function VaultDetail({ vault }: { vault: Vault }) {
 
           <div className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-6">
             <div className="flex border-b border-[var(--border)] mb-6">
-              {["Overview", "Holdings", "My Transactions"].map((tab) => (
+            {["Overview", "Holdings", "My Transactions"].map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setActiveInfoTab(tab)}
-                  className={`pb-3 pt-1 mx-4 font-semibold text-md transition-colors ${
+                  onClick={() => setActiveInfoTab(tab as any)}
+                  className={`pb-3 pt-1 mx-4 font-semibold text-sm transition-colors ${
                     activeInfoTab === tab
                       ? "text-[var(--foreground)] border-b-2 border-[var(--primary)]"
                       : "text-[var(--foreground-secondary)] hover:text-[var(--foreground)]"
@@ -266,8 +321,22 @@ export function VaultDetail({ vault }: { vault: Vault }) {
               ))}
             </div>
             <div>
-              <h3 className="font-semibold text-lg mb-3 text-[var(--foreground)]">Strategy</h3>
-              <p className="text-[var(--foreground-secondary)] text-md leading-relaxed">{strategy}</p>
+              {activeInfoTab === 'Overview' && (
+                <motion.div key="overview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+                  <h3 className="font-semibold text-lg mb-3 text-[var(--foreground)]">Strategy</h3>
+                  <p className="text-[var(--foreground-secondary)] text-md leading-relaxed">{strategy}</p>
+                </motion.div>
+              )}
+              {activeInfoTab === 'Holdings' && (
+                <motion.div key="holdings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+                  <HoldingsTable />
+                </motion.div>
+              )}
+              {activeInfoTab === 'My Transactions' && (
+                <motion.div key="transactions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+                  <TransactionsTable />
+                </motion.div>
+              )}
             </div>
           </div>
         </motion.div>
@@ -284,7 +353,7 @@ export function VaultDetail({ vault }: { vault: Vault }) {
             <p className="text-md text-[var(--foreground-secondary)]">My Balance</p>
             <p className="text-3xl font-semibold mb-1 text-[var(--foreground)]">{userTotalBalance}</p>
             <p className="text-md font-medium text-green-700">{userTotalGain} All Time</p>
-            <div className="flex items-center gap-2 text-xs text-center p-2 rounded-md bg-[var(--secondary)] text-[var(--foreground-secondary)] mt-6">
+            <div className="flex items-center justify-center text-xs text-center p-2 rounded-md bg-[var(--secondary)] text-[var(--foreground-secondary)] mt-6">
             <Info size={14} />
             <span>Mint your NYRA tokens from the Faucet before depositing.</span>
           </div>
@@ -306,8 +375,8 @@ export function VaultDetail({ vault }: { vault: Vault }) {
           <div className="bg-[var(--secondary)] shadow-[var(--shadow-card)] border border-[var(--border)] rounded-lg p-6">
             <StatCard label="APY" value={vault.apy} />
             <StatCard label="Total Value Locked (TVL)" value={vault.tvl} />
-            <StatCard label="Management Fee" value={managementFee} />
-            <StatCard label="Performance Fee" value={performanceFee} />
+            {/* <StatCard label="Management Fee" value={managementFee} />
+            <StatCard label="Performance Fee" value={performanceFee} /> */}
             <div className="flex justify-between items-center pt-3">
               <span className="text-md text-[var(--foreground-secondary)]">Risk Level</span>
               <span className={`font-medium px-3 py-1 rounded-full text-xs border border-[var(--border)] ${riskLevelStyles[vault.risk]}`}>

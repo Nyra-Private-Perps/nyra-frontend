@@ -15,6 +15,7 @@
   --secondary-foreground: #5D4037;
   --border: #D7CCC8;
   --hover: #D7CCC8;
+  --hovercon: #5D4037;
   --radius: 0.6rem;   
   --shadow-card: 0 4px 6px -1px rgba(93, 64, 55, 0.07), 0 10px 15px -3px rgba(93, 64, 55, 0.1);
 

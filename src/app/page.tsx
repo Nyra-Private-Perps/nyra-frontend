@@ -50,12 +50,12 @@ export default function HomePage() {
           variants={containerVariants}
           initial="hidden"
           animate="visible"
-          className="max-w-4xl w-full"
+          className="max-w-5xl w-full"
         >
           {/* 3. Animate the headline */}
           <motion.h1
             variants={itemVariants}
-            className="text-4xl md:text-5xl font-semibold text-[var(--foreground)] leading-tight"
+            className="text-4xl md:text-5xl font-semibold text-[var(--foreground)] leading-tight font-extrabold"
           >
             Nyra brings{" "}
             {/* --- ENHANCEMENT: Highlighted Text --- */}
@@ -69,11 +69,10 @@ export default function HomePage() {
           {/* 4. Animate the paragraph */}
           <motion.p
             variants={itemVariants}
-            className="mt-8 max-w-3xl mx-auto text-lg text-[var(--foreground-secondary)] leading-relaxed"
+            className="mt-8 max-w-4xl mx-auto text-lg text-[var(--foreground-secondary)] leading-relaxed text-left font-semibold"
           >
-            Today’s protocols require over-collateralization, locking capital and excluding millions. We’re changing that
-            by aggregating liquidity and execution through a Trusted Execution Environment (TEE), ensuring every trade
-            remains fully private yet verifiable on-chain.
+            Nyra brings privacy and efficiency to perpetual markets.
+            Perpetual trading today is exposed and fragmented. Nyra aggregates liquidity and execution across multiple perp venues through a Trusted Execution Environment (TEE), ensuring every trade and strategy remains private yet verifiable on-chain. Built on Horizen and optimized for institutional flow, Nyra delivers private order routing, cross-market execution, and yield-generating vault strategies within a unified, secure infrastructure.
           </motion.p>
 
           {/* 5. Animate the button */}

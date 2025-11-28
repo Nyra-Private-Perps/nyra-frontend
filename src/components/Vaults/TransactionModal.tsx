@@ -14,14 +14,30 @@ interface TransactionModalProps {
 export function TransactionModal({ type, onClose, onSubmit }: TransactionModalProps) {
   const { isConnected } = useAccount()
   const [amount, setAmount] = useState("")
+  const [error, setError] = useState("")
+
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setAmount(val);
+    
+    // Security: Input Validation
+    if (val && parseFloat(val) < 0) {
+      setError("Amount cannot be negative");
+    } else if (val && isNaN(Number(val))) {
+      setError("Invalid number");
+    } else {
+      setError("");
+    }
+  }
 
   const handleTransaction = () => {
-    if (!isConnected || !amount || parseFloat(amount) <= 0) return
+    // Security: Final check before submission
+    if (!isConnected || !amount || parseFloat(amount) <= 0 || error) return
     onSubmit(amount, type)
     onClose()
   }
 
-  const isButtonDisabled = !isConnected || !amount || parseFloat(amount) <= 0
+  const isButtonDisabled = !isConnected || !amount || parseFloat(amount) <= 0 || !!error
 
   return (
     <motion.div
@@ -60,7 +76,7 @@ export function TransactionModal({ type, onClose, onSubmit }: TransactionModalPr
               type="number"
               placeholder="0.00"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={handleAmountChange}
               // Themed input field
               className="w-full bg-white border border-[var(--border)] rounded-lg px-4 py-3 text-[var(--foreground)] text-lg font-medium placeholder:text-[var(--foreground-secondary)]/70 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
             />

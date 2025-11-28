@@ -26,7 +26,7 @@ const WalletConnectButton = () => {
         </div>
         <button
           onClick={() => disconnect()}
-          className="bg-[var(--secondary)] text-[var(--secondary-foreground)] shadow-[var(--shadow-card)] px-4 py-2 rounded-lg text-md font-medium hover:bg-[var(--hover)] transition-colors duration-300 border border-[var(--border)]"
+          className="bg-[var(--secondary)] text-[var(--secondary-foreground)] shadow-[var(--shadow-card)] px-4 py-2 rounded-lg text-md font-medium hover:bg-[var(--hovercon)] hover:text-white transition-colors duration-300 border border-[var(--border)]"
         >
           Disconnect
         </button>
@@ -38,7 +38,7 @@ const WalletConnectButton = () => {
     <>
       <button
         onClick={() => setIsModalOpen(true)}
-        className="bg-[var(--secondary)] text-[var(--secondary-foreground)] px-4 py-2 rounded-lg text-md font-medium hover:bg-[var(--hover)] transition-colors duration-300 border border-[var(--border)]"
+        className="bg-[var(--secondary)] text-[var(--secondary-foreground)] px-4 py-2 rounded-lg text-md font-medium hover:bg-[var(--hovercon)] hover:text-white  transition-colors duration-300 border border-[var(--border)]"
       >
         Connect Wallet
       </button>
@@ -50,12 +50,13 @@ const WalletConnectButton = () => {
 }
 
 export function Header() {
+  const { address, isConnected } = useAccount()
   return (
     <header className="w-full px-4 sm:px-6 lg:px-8 py-4">
       <nav className="flex items-center justify-between max-w-7xl mx-auto">
         <Link href="/" className="flex items-center gap-3">
           <div className=" flex items-center justify-center rounded-lg font-bold text-xl">
-       <Image src="/logo.png" alt="Nyra Logo" width={80} height={80} />
+       <Image src="/logomain.png" alt="Nyra Logo" width={150} height={150} />
           </div>
           {/* <span className="text-xl font-semibold text-[var(--foreground)]">Nyra</span> */}
         </Link>
@@ -66,9 +67,10 @@ export function Header() {
           <Link href="/faucet" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
             Faucet
           </Link>
+          {isConnected &&
           <Link href="/profile" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
             Profile
-          </Link>
+          </Link>}
         </div>
         <WalletConnectButton />
       </nav>
