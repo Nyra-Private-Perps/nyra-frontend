@@ -1,6 +1,6 @@
 "use client"
 
-import { motion, AnimatePresence, Variants } from "framer-motion";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { Check, X, Loader, ShieldCheck, ShieldOff, Shield } from "lucide-react";
 
 // --- Animation Variants (No Changes) ---

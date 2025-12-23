@@ -1,11 +1,8 @@
-"use client"
-
-import Link from "next/link"
 import { useAccount, useDisconnect } from "wagmi"
 import { ConnectWalletModal } from "../Wallet/ConnectWalletModal"
 import { useState } from "react"
 import { AnimatePresence } from "framer-motion"
-import Image from "next/image"
+import { Link } from "react-router-dom"
 
 function truncateAddress(address: string) {
   if (!address) return ""
@@ -43,7 +40,7 @@ const WalletConnectButton = () => {
         Connect Wallet
       </button>
       <AnimatePresence>
-      {isModalOpen && <ConnectWalletModal onClose={() => setIsModalOpen(false)} />}
+        {isModalOpen && <ConnectWalletModal onClose={() => setIsModalOpen(false)} />}
       </AnimatePresence>
     </>
   )
@@ -51,26 +48,35 @@ const WalletConnectButton = () => {
 
 export function Header() {
   const { address, isConnected } = useAccount()
+  
   return (
     <header className="w-full px-4 sm:px-6 lg:px-8 py-4">
       <nav className="flex items-center justify-between max-w-7xl mx-auto">
-        <Link href="/" className="flex items-center gap-3">
-          <div className=" flex items-center justify-center rounded-lg font-bold text-xl">
-       <Image src="/logomain.png" alt="Nyra Logo" width={150} height={150} />
+        {/* FIX: Changed href to to */}
+        <Link to="/" className="flex items-center gap-3">
+          <div className="flex items-center justify-center rounded-lg font-bold text-xl">
+            {/* Note: Ensure logomain.png is in your Vite 'public' folder */}
+            <img src="/logomain.png" alt="Nyra Logo" width={150} height={150} />
           </div>
-          {/* <span className="text-xl font-semibold text-[var(--foreground)]">Nyra</span> */}
         </Link>
+
         <div className="hidden md:flex items-center gap-8">
-          <Link href="/vaults" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
+          {/* FIX: Changed href to to */}
+          <Link to="/vaults" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
             Vaults
           </Link>
-          <Link href="/faucet" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
+          
+          {/* FIX: Changed href to to */}
+          <Link to="/faucet" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
             Faucet
           </Link>
-          {isConnected &&
-          <Link href="/profile" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
-            Profile
-          </Link>}
+          
+          {isConnected && (
+            /* FIX: Changed href to to */
+            <Link to="/profile" className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors duration-300 font-medium">
+              Profile
+            </Link>
+          )}
         </div>
         <WalletConnectButton />
       </nav>

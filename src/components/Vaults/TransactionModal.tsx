@@ -1,5 +1,3 @@
-"use client"
-
 import { useState } from "react"
 import { useAccount } from "wagmi"
 import { X } from "lucide-react"

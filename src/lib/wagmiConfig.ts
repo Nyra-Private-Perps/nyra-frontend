@@ -1,6 +1,6 @@
 // src/lib/wagmiConfig.ts
 import { http, createConfig } from 'wagmi';
-import { Chain, mainnet, sepolia } from 'wagmi/chains';
+import { type Chain, mainnet, sepolia } from 'wagmi/chains';
 import { coinbaseWallet, injected, walletConnect } from '@wagmi/connectors';
 
 // --- 1. DEFINE THE HORIZEN GOBI TESTNET CHAIN ---

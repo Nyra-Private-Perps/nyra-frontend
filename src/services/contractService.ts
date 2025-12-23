@@ -1,11 +1,18 @@
 // src/services/contractService.ts
 
 import { ethers, BrowserProvider, Contract, ContractTransactionResponse } from 'ethers';
+
+// Extend the Window interface to include the ethereum property
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
 import { EventEmitter } from "eventemitter3";
 
 // --- Configuration ---
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
-const TOKEN_ADDRESS = process.env.NEXT_PUBLIC_TOKEN_ADDRESS || "";
+const CONTRACT_ADDRESS = import.meta.env.VITE_PUBLIC_CONTRACT_ADDRESS || "";
+const TOKEN_ADDRESS = import.meta.env.VITE_PUBLIC_TOKEN_ADDRESS || "";
 
 // --- ABIs ---
 const VAULT_ABI = [

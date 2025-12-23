@@ -1,9 +1,8 @@
 "use client"
 
 import { useConnect } from 'wagmi';
-import { motion, AnimatePresence, Variants } from "framer-motion";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { X } from 'lucide-react';
-import Image from 'next/image';
 
 // --- Animation Variants (Consistent with other modals) ---
 const backdropVariants: Variants = {
@@ -34,7 +33,7 @@ const WalletIcon = ({ connectorName }: { connectorName: string }) => {
   const iconSrc = walletIcons[key] || '/wallets/default.svg';
 
   return (
-    <Image
+    <img
       src={iconSrc}
       alt={`${connectorName} logo`}
       width={32}
