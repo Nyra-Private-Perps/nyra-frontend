@@ -13,7 +13,7 @@ import { EventEmitter } from "eventemitter3";
 // --- Configuration ---
 const CONTRACT_ADDRESS = import.meta.env.VITE_PUBLIC_CONTRACT_ADDRESS || "";
 const TOKEN_ADDRESS = import.meta.env.VITE_PUBLIC_TOKEN_ADDRESS || "";
-
+console.log("Using Contract Address:", CONTRACT_ADDRESS);
 // --- ABIs ---
 const VAULT_ABI = [
   "function deposit(address token, uint256 amount) external",
@@ -72,6 +72,7 @@ class ContractService {
 
   // --- 1. Mint Token (Faucet) ---
   async mintToken(): Promise<string> {
+    console.log("Minting token from faucet...",CONTRACT_ADDRESS);
     try {
       const signer = await this.getSigner();
       const faucetContract = new Contract(TOKEN_ADDRESS, FAUCET_ABI, signer);
@@ -103,14 +104,15 @@ class ContractService {
       if (!ethers.isAddress(CONTRACT_ADDRESS)) {
         throw new Error("Invalid Vault Contract Address.");
       }
-
+console.log("Approving",amount,"tokens for vault at",CONTRACT_ADDRESS,TOKEN_ADDRESS);
       const signer = await this.getSigner();
       const erc20 = new Contract(TOKEN_ADDRESS, ERC20_ABI, signer);
-      
+      console.log("Token Decimals:",erc20);
       // Fetch decimals dynamically for precision
       const decimals = await erc20.decimals();
+      console.log("Token Decimals:",decimals);
       const parsedAmount = ethers.parseUnits(amount, decimals);
-
+      console.log("Approving",amount,"tokens for vault at",CONTRACT_ADDRESS,parsedAmount);
       const tx = await erc20.approve(CONTRACT_ADDRESS, parsedAmount) as ContractTransactionResponse;
       
       this.emitter.emit("approveConfirmed", tx.hash);

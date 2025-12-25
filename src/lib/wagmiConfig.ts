@@ -27,7 +27,7 @@ export const horizenGobi = {
 } as const satisfies Chain; // Use `satisfies Chain` for type safety
 
 // --- YOUR PROJECT ID ---
-export const projectId = 'YOUR_PROJECT_ID'; // <-- PASTE YOUR PROJECT ID HERE
+export const projectId = import.meta.env.VITE_PROJECT_ID // <-- PASTE YOUR PROJECT ID HERE
 
 if (!projectId) throw new Error('Project ID is not defined');
 
