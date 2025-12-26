@@ -6,187 +6,101 @@ import { horizenGobi } from "../lib/chains";
 import Confetti from 'react-confetti';
 import {
   ArrowRight, Wallet, Globe, Activity, Droplets, Copy, Loader, PartyPopper, Shield,
-  Check, AlertCircle
+  Check, AlertCircle, Info, Hash, Network, FileCode,
+  Layers
 } from "lucide-react";
 import { contractService } from "../services/contractService";
 import { Link } from "react-router-dom";
-import { AnimatedGradientBackground } from "../components/UI/AnimatedBackgroud"; // Ensure this exists from previous steps
+
+// --- 1. THE ELITE LIGHT BACKGROUND ---
+const ApexBackground = () => (
+  <>
+    <div 
+      className="fixed inset-0 -z-20"
+      style={{
+        backgroundColor: '#F8F7FF',
+        backgroundImage: `
+          radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+          radial-gradient(at 100% 0%, rgba(168, 85, 247, 0.12) 0px, transparent 50%),
+          radial-gradient(at 100% 100%, rgba(236, 72, 153, 0.08) 0px, transparent 50%)
+        `,
+        backgroundAttachment: 'fixed'
+      }}
+    />
+    <div className="fixed inset-0 -z-15 opacity-[0.03] pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }} />
+    <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
+      <motion.div animate={{ x: [0, 30, 0], y: [0, -30, 0] }} transition={{ duration: 15, repeat: Infinity }} className="absolute top-[-10%] left-[20%] w-[500px] h-[500px] bg-purple-200 rounded-full blur-[100px] opacity-60" />
+      <motion.div animate={{ x: [0, -30, 0], y: [0, 30, 0] }} transition={{ duration: 18, repeat: Infinity, delay: 2 }} className="absolute top-[10%] right-[10%] w-[450px] h-[450px] bg-blue-200 rounded-full blur-[100px] opacity-60" />
+    </div>
+  </>
+);
 
 // --- Animation Variants ---
-const containerVariants: Variants = { 
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      delayChildren: 0.2,
-      staggerChildren: 0.1,
-    },
-  },
-};
-
-const itemVariants: Variants = { 
-  hidden: { y: 20, opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: { duration: 0.5, ease: "easeOut" }
-  },
-};
-
 const modalVariants: Variants = {
-  hidden: { opacity: 0, scale: 0.95, y: 20 },
-  visible: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", duration: 0.5 } },
-  exit: { opacity: 0, scale: 0.95, y: 20 }
+  hidden: { opacity: 0, scale: 0.9, y: 20, filter: "blur(10px)" },
+  visible: { opacity: 1, scale: 1, y: 0, filter: "blur(0px)", transition: { type: "spring", damping: 25, stiffness: 300 } },
+  exit: { opacity: 0, scale: 0.9, y: 20, filter: "blur(10px)" }
 };
 
-// --- Reusable Helper Components (Dark Mode) ---
-const DetailCard = ({ title, value, imgSrc, icon }: { 
-    title: string; 
-    value: string; 
-    imgSrc?: string; 
-    icon?: React.ReactNode; 
-  }) => (
-    <div className="bg-white/5 p-5 rounded-2xl border border-white/10 flex items-center gap-4 hover:border-blue-500/30 transition-colors group">
-      <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 group-hover:bg-blue-500/20 transition-colors">
-        {imgSrc ? (
-          <img src={imgSrc} alt={`${title} icon`} className="w-6 h-6 object-contain" />
-        ) : (
-          <div className="text-blue-400">{icon}</div>
-        )}
-      </div>
-      <div>
-        <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">{title}</p>
-        <span className="font-semibold text-base text-white">{value}</span>
-      </div>
-    </div>
-  );
-
-const LinkButton = ({ text, icon, href, isExternal }: { text: string; icon: React.ReactNode; href: string; isExternal?: boolean }) => (
-    <a 
-      href={href} 
-      target={isExternal ? "_blank" : "_self"} 
-      rel={isExternal ? "noopener noreferrer" : ""} 
-      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all text-white hover:border-white/20 group"
-    >
-      <div className="flex items-center gap-3">
-        <div className="text-gray-400 group-hover:text-blue-400 transition-colors">{icon}</div>
-        <span className="font-medium">{text}</span>
-      </div>
-      <ArrowRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-colors" />
-    </a>
-  );
-
-// --- Styled Minting Modal (Dark) ---
-const MintingProgressModal = ({ step }: { step: number }) => { 
-    // Dark Theme Colors
-    const TEXT_COLOR = "#FFFFFF";
-    const DIM_TEXT_COLOR = "#6B7280";
-    
-    const stepsLabels = ["Approve mint function", "Minting your tokens"];
-  
-    return (
-      <motion.div 
-        variants={modalVariants} 
-        initial="hidden" animate="visible" exit="exit"
-        className="rounded-[24px] w-full max-w-md p-8 shadow-2xl relative overflow-hidden"
-        style={{ 
-          background: "rgba(10, 10, 15, 0.95)",
-          border: "1px solid rgba(255, 255, 255, 0.1)",
-          backdropFilter: "blur(20px)"
-        }} 
-      >
-        {/* Glow Effect */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-blue-500/20 rounded-full blur-[50px] pointer-events-none" />
-
-        {/* --- Central Animation --- */}
-        <div className="relative h-40 w-full flex items-center justify-center mb-8"> 
-          {/* Rotating Rings */}
-          <motion.div
-            className="absolute inset-0 rounded-full border border-blue-500/20"
-            style={{ width: 140, height: 140, margin: 'auto' }}
-            animate={{ rotate: 360 }}
-            transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-          />
-          <motion.div
-            className="absolute inset-0 rounded-full border border-dashed border-white/10"
-            style={{ width: 110, height: 110, margin: 'auto' }}
-            animate={{ rotate: -360 }}
-            transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-          />
-          
-          {/* Shield Icon */}
-          <motion.div
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ duration: 2, repeat: Infinity }}
-            className="relative z-10 flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-b from-gray-800 to-gray-900 border border-white/10 shadow-lg shadow-blue-500/10"
-          >
-            <Shield className="w-8 h-8 text-blue-400" /> 
+// --- ELITE LIGHT THEME MODALS ---
+const MintingProgressModal = ({ step }: { step: number }) => {
+  const steps = ["Approve mint function", "Minting your tokens"];
+  return (
+    <motion.div variants={modalVariants} initial="hidden" animate="visible" exit="exit" className="bg-white/90 backdrop-blur-3xl border border-white rounded-[3rem] w-full max-w-md p-10 shadow-2xl relative overflow-hidden">
+       <div className="absolute -top-24 -left-24 w-64 h-64 bg-blue-100/50 blur-[80px] rounded-full pointer-events-none" />
+       {/* 3D Energy Swirl Animation */}
+       <div className="relative h-40 flex items-center justify-center mb-10">
+          <motion.div animate={{ rotate: 360 }} transition={{ duration: 15, repeat: Infinity, ease: "linear" }} className="absolute w-40 h-40 border border-indigo-100 border-dashed rounded-full" />
+          <motion.div animate={{ scale: [1, 1.1, 1], opacity: [0.8, 1, 0.8] }} transition={{ duration: 3, repeat: Infinity }} className="w-20 h-20 bg-white border border-indigo-50 rounded-3xl flex items-center justify-center text-indigo-600 shadow-xl shadow-indigo-100">
+            <Activity size={32} />
           </motion.div>
-        </div>
-
-        <h2 className="text-xl font-bold text-center mb-8 text-white">Minting in Progress</h2> 
-        
-        <div className="space-y-5"> 
-          {stepsLabels.map((label, index) => {
-            const stepNumber = index + 1;
-            const isCompleted = step > stepNumber;
-            const isCurrent = step === stepNumber;
-            
+       </div>
+       <h2 className="text-2xl font-bold text-center mb-10 text-gray-900 tracking-tight leading-none">Processing Mint</h2>
+       <div className="space-y-5 px-2">
+          {steps.map((label, i) => {
+            const isDone = step > i + 1;
+            const isCur = step === i + 1;
             return (
-              <div key={index} className="flex items-center gap-4 text-sm"> 
-                <div className={`flex items-center justify-center w-6 h-6 rounded-full border transition-colors ${
-                    isCompleted ? "bg-emerald-500 border-emerald-500" : 
-                    isCurrent ? "border-blue-500 text-blue-500" : "border-gray-700 bg-gray-800/50"
-                }`}> 
-                  {isCompleted ? (
-                    <Check className="w-3.5 h-3.5 text-white" /> 
-                  ) : isCurrent ? (
-                      <Loader className="w-3.5 h-3.5 animate-spin" /> 
-                  ) : (
-                    <div className="w-1.5 h-1.5 rounded-full bg-gray-600" /> 
-                  )}
+              <div key={i} className={`flex items-center gap-4 transition-all ${isCur || isDone ? "opacity-100" : "opacity-40"}`}>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${isDone ? "bg-emerald-500 border-emerald-500" : isCur ? "border-indigo-600" : "border-slate-200"}`}>
+                  {isDone ? <Check size={14} className="text-white" strokeWidth={4} /> : isCur ? <Loader size={14} className="animate-spin text-indigo-600" /> : null}
                 </div>
-                <span className={`font-medium transition-colors ${isCurrent || isCompleted ? TEXT_COLOR : DIM_TEXT_COLOR}`}>
-                  {label}
-                </span>
+                <span className={`text-sm font-bold tracking-tight ${isCur || isDone ? "text-gray-900" : "text-gray-400"}`}>{label}</span>
               </div>
             );
           })}
-        </div>
-      </motion.div>
-    );
-  };
-  
-  // --- Success Modal (Dark) ---
-  const SuccessModal = ({ onClose }: { onClose: () => void }) => {
-    return (
-      <motion.div 
-        variants={modalVariants} initial="hidden" animate="visible" exit="exit"
-        className="rounded-[24px] w-full max-w-sm p-8 text-center shadow-2xl relative overflow-hidden bg-[#0A0A0F] border border-white/10 backdrop-blur-xl"
-      >
-        <div className="absolute inset-0 bg-emerald-500/5 pointer-events-none" />
-        
-        <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-500/20">
-            <PartyPopper className="w-8 h-8 text-emerald-400" />
-        </div>
-        
-        <h2 className="text-2xl font-bold text-white mb-2">Mint Successful!</h2>
-        <p className="text-gray-400 text-sm mb-8 leading-relaxed">
-          1,000 Testnet NYRA tokens have been sent to your wallet. You are ready to trade.
-        </p>
+       </div>
+    </motion.div>
+  );
+};
 
-       <div className="flex flex-col gap-3">
-        <Link to={'/vaults'} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-900/20">
-          Go to Vaults
-        </Link>
-        <button onClick={onClose} className="w-full bg-white/5 hover:bg-white/10 text-white font-semibold py-3 rounded-xl transition-colors border border-white/5">
-          Close
-        </button>
-        </div>
-      </motion.div>
-    );
-  };
-  
+const SuccessModal = ({ onClose }: { onClose: () => void }) => (
+  <motion.div variants={modalVariants} initial="hidden" animate="visible" exit="exit" className="bg-white/90 backdrop-blur-3xl border border-white rounded-[3rem] w-full max-w-sm p-10 text-center shadow-2xl relative overflow-hidden">
+    <div className="absolute -top-24 -right-24 w-48 h-48 bg-emerald-50 blur-[80px] rounded-full pointer-events-none" />
+    <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} className="w-20 h-20 bg-emerald-50 border border-emerald-100 text-emerald-500 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-sm">
+        <PartyPopper size={32} />
+    </motion.div>
+    <h2 className="text-3xl font-bold text-gray-950 mb-3 tracking-tighter leading-none">Successful!</h2>
+    <p className="text-gray-500 text-sm mb-10 px-2 font-medium">1,000 $NYRA tokens have been deployed to your secure wallet address.</p>
+    <div className="flex flex-col gap-3">
+        <Link to="/vaults" className="w-full bg-gray-950 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-black transition-all active:scale-95">Go to Vaults</Link>
+        <button onClick={onClose} className="w-full text-gray-400 font-bold py-4 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-all text-xs uppercase tracking-widest">Close</button>
+    </div>
+  </motion.div>
+);
+
+// --- UI Components ---
+const DetailCard = ({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) => (
+  <div className="bg-white/70 backdrop-blur-xl p-6 rounded-2xl border border-white flex items-center gap-5 hover:border-indigo-100 hover:shadow-lg transition-all group">
+    <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-indigo-50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-600 group-hover:text-white transition-all duration-500">
+      {icon}
+    </div>
+    <div>
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-indigo-600 transition-colors">{title}</p>
+      <span className="font-bold text-xl text-slate-800 tracking-tight">{value}</span>
+    </div>
+  </div>
+);
 
 export default function FaucetPage() {
     const { address, isConnected } = useAccount();
@@ -196,181 +110,111 @@ export default function FaucetPage() {
     const [mintStep, setMintStep] = useState(1); 
 
     useEffect(() => {
-      const handleMintConfirmed = (txHash: string) => {
-          console.log("Mint transaction confirmed:", txHash);
+      const handleMintConfirmed = () => {
           setMintStep(2); 
-          setTimeout(() => {
-            setIsMinting(false);
-            setIsSuccess(true);
-            setMintStep(1); 
-          }, 3000); 
+          setTimeout(() => { setIsMinting(false); setIsSuccess(true); setMintStep(1); }, 3000); 
       };
-      
       contractService.on("mintConfirmed", handleMintConfirmed);
-      
-      return () => {
-        contractService.off("mintConfirmed", handleMintConfirmed);
-      };
+      return () => { contractService.off("mintConfirmed", handleMintConfirmed); };
     }, []);
   
-    const handleAddNetwork = () => {
-      switchChain({ chainId: horizenGobi.id });
-    };
-  
     const handleMint = async() => {
-      setIsMinting(true);
-      setMintStep(1); 
-      try {
-        await contractService.mintToken();
-      } catch (error) {
-        console.error("Minting failed:", error);
-        setIsMinting(false); 
-        setMintStep(1); 
-      }
-    };
-    
-    const handleCloseSuccess = () => {
-      setIsSuccess(false);
+      setIsMinting(true); setMintStep(1); 
+      try { await contractService.mintToken(); } catch (error) { setIsMinting(false); setMintStep(1); }
     };
   
     return (
-      <div className="min-h-screen bg-black text-white selection:bg-blue-500/30 relative overflow-hidden font-sans">
-        
-        {/* Animated Background */}
-        <div className="fixed inset-0 z-0">
-             <AnimatedGradientBackground />
-        </div>
+      <div className="min-h-screen relative overflow-x-hidden font-sans text-slate-800 selection:bg-indigo-100">
+        <ApexBackground />
+        <Header />
 
-        {isSuccess && <Confetti recycle={false} numberOfPieces={400} colors={['#3B82F6', '#10B981', '#F59E0B']} />}
+        {isSuccess && <Confetti recycle={false} numberOfPieces={400} colors={['#6366f1', '#a855f7', '#10B981']} />}
         
-        <div className="relative z-10">
-          <Header />
-          
-          <main className="py-20 px-6">
-            <motion.div 
-                variants={containerVariants} 
-                initial="hidden" 
-                animate="visible" 
-                className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 items-start"
-            >
-              
-              {/* --- Left Column (Network & Details) --- */}
-              <div className="lg:col-span-1 space-y-8">
-                {/* Network Card */}
-                <motion.div variants={itemVariants} className="bg-gray-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl">
-                  <div className="inline-block p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 mb-6">
-                    <Globe className="w-6 h-6 text-blue-400" />
-                  </div>
-                  <h1 className="text-3xl font-bold tracking-tight text-white mb-2">{horizenGobi.name}</h1>
-                  <p className="text-gray-400 text-sm mb-6">Connect to the Horizen Gobi Testnet to interact with the protocol.</p>
-                  
-                  <button 
-                    onClick={handleAddNetwork} 
-                    className="w-full bg-white text-black font-bold py-3.5 px-6 rounded-xl flex items-center justify-center gap-2 hover:bg-gray-200 transition-colors shadow-lg"
-                  >
+        <main className="relative z-10 max-w-7xl mx-auto px-6 pt-40 pb-32">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            {/* LEFT COLUMN */}
+            <div className="lg:col-span-4 space-y-8">
+              <section className="bg-white/70 backdrop-blur-2xl p-8 rounded-[2.5rem] border border-white shadow-xl">
+                  <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-6 border border-blue-100"><Globe size={24} /></div>
+                  <h2 className="font-bold text-2xl text-slate-900 mb-2 tracking-tight">Horizen Testnet</h2>
+                  <p className="text-slate-500 text-sm mb-8 leading-relaxed font-medium">Connect to the Horizen Gobi Testnet to interact with the protocol.</p>
+                  <button onClick={() => switchChain({ chainId: horizenGobi.id })} className="w-full bg-slate-950 text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-3 hover:bg-black transition-all shadow-lg active:scale-95">
                     <Wallet size={18} /> Switch Network
                   </button>
-                  
-                  <div className="mt-6 pt-6 border-t border-white/5 space-y-3">
-                    <LinkButton text="Block Explorer" icon={<Activity size={18} />} href={horizenGobi.blockExplorers.default.url} isExternal />
-                  </div>
-                </motion.div>
+              </section>
 
-                {/* Info Card */}
-                <motion.div variants={itemVariants} className="bg-gray-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-xl">
-                  <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-                     <AlertCircle className="w-5 h-5 text-gray-400" /> Network Info
-                  </h3>
-                  <div className="space-y-4">
-                      <div className="bg-black/40 p-4 rounded-xl border border-white/5">
-                          <p className="text-xs text-gray-500 font-bold uppercase mb-1">RPC URL</p>
-                          <div className="flex items-center justify-between gap-2">
-                              <span className="text-sm font-mono text-blue-300 truncate">https://horizen-testnet.rpc...</span>
-                              <Copy className="w-4 h-4 text-gray-500 hover:text-white cursor-pointer transition-colors" />
-                          </div>
+              <section className="bg-white/50 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white shadow-lg">
+                <h3 className="font-bold text-lg text-slate-800 mb-6 flex items-center gap-2"><Info size={18} className="text-blue-500" /> Network Info</h3>
+                <div className="space-y-5">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block pl-1">Chain Identity</label>
+                      <div className="bg-white/80 border border-indigo-50 p-4 rounded-xl flex items-center gap-3 border-l-4 border-l-purple-500 shadow-inner">
+                        <Hash size={16} className="text-purple-300" />
+                        <span className="font-mono text-lg font-black text-slate-700">2651420</span>
                       </div>
-                      <div className="bg-black/40 p-4 rounded-xl border border-white/5">
-                          <p className="text-xs text-gray-500 font-bold uppercase mb-1">Chain ID</p>
-                          <span className="text-sm font-mono text-white">2651420</span>
-                      </div>
-                  </div>
-                </motion.div>
-              </div>
-    
-              {/* --- Right Column (Faucet & Token Info) --- */}
-              <div className="lg:col-span-2 space-y-8">
-                
-                {/* Main Faucet Card */}
-                <motion.div variants={itemVariants} className="bg-gradient-to-b from-gray-900/60 to-black/60 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 rounded-full blur-[80px] pointer-events-none" />
-                  
-                  <div className="relative z-10">
-                    <h2 className="text-4xl font-bold text-white mb-2">Token Faucet</h2>
-                    <p className="text-gray-400 mb-8">Mint 1,000 $NYRA testnet tokens to start testing strategies.</p>
-
-                    {isConnected && address ? (
-                      <div className="space-y-6">
-                        <div className="flex flex-col sm:flex-row gap-4">
-                          <div className="flex-grow bg-black/40 border border-white/10 rounded-xl px-5 py-4 text-sm font-mono text-gray-300 flex items-center justify-between">
-                            <span className="truncate">{address}</span>
-                            <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded ml-2 whitespace-nowrap border border-emerald-500/20">Connected</span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex flex-col sm:flex-row gap-4 items-center">
-                            <button 
-                                onClick={handleMint} 
-                                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-10 rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
-                            >
-                                Mint 1,000 NYRA
-                            </button>
-                            <p className="text-sm text-gray-500">
-                                Cooldown: <span className="text-gray-300">24 Hours</span>
-                            </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-yellow-500/5 border border-yellow-500/10 rounded-2xl p-6 text-center">
-                        <Wallet className="w-10 h-10 text-yellow-500/50 mx-auto mb-4" />
-                        <h3 className="text-white font-semibold mb-2">Wallet Not Connected</h3>
-                        <p className="text-sm text-gray-500 mb-6">Please connect your wallet to mint testnet tokens.</p>
-                        <button disabled className="bg-white/5 text-gray-500 font-semibold py-3 px-8 rounded-xl cursor-not-allowed border border-white/5">
-                          Connect Wallet
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-                
-                {/* Details Grid */}
-                <motion.div variants={itemVariants}>
-                    <h3 className="text-xl font-bold text-white mb-6">Token Details</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <DetailCard title="Native Token" value="$NYRA" icon={<Droplets size={20} />} />
-                        <DetailCard title="Network Type" value="Testnet" icon={<Activity size={20} />} />
-                        <DetailCard title="Settlement" value="Base Sepolia" icon={<Globe size={20} />} />
-                        <DetailCard title="Standard" value="ERC-20" icon={<Copy size={20} />} />
                     </div>
-                </motion.div>
+                </div>
+              </section>
+            </div>
+  
+            {/* RIGHT COLUMN */}
+            <div className="lg:col-span-8 space-y-10">
+              <section className="bg-white/80 backdrop-blur-3xl p-10 lg:p-12 rounded-[3rem] border border-white shadow-2xl relative overflow-hidden">
+                <div className="absolute inset-0 opacity-[0.05] bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400" />
+                <div className="relative z-10">
+                  <h1 className="font-bold text-5xl md:text-6xl mb-4 text-slate-950 tracking-tighter leading-none">
+                      Token <span className="italic font-serif text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 pr-2">Faucet</span>
+                  </h1>
+                  <p className="text-slate-500 text-lg mb-10 max-w-2xl leading-relaxed font-medium">Mint <span className="text-indigo-600 font-black">1,000 $NYRA</span> testnet tokens. Experience the future of institutional privacy aggregation.</p>
 
-              </div>
-            </motion.div>
-          </main>
-        </div>
+                  <div className="bg-indigo-50/40 border border-indigo-100 p-2 rounded-[2rem] flex items-center mb-10 shadow-inner">
+                    <div className="flex-grow px-6 py-4">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Receiver Address</label>
+                      <input className="w-full bg-transparent border-none p-0 text-slate-800 font-mono text-base focus:ring-0 font-bold" readOnly type="text" value={address || "Connect wallet to view"} />
+                    </div>
+                    {isConnected && <div className="px-4 py-2 mr-2 bg-white text-emerald-600 text-[10px] font-black uppercase tracking-widest rounded-xl border border-indigo-50 shadow-sm flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Connected</div>}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-8">
+                    <button onClick={handleMint} disabled={!isConnected || isMinting} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-lg py-5 px-12 rounded-2xl shadow-xl shadow-indigo-100 active:scale-95 transition-all flex items-center justify-center gap-3 group disabled:opacity-50">
+                      Mint 1,000 NYRA <ArrowRight className="group-hover:translate-x-1 transition-transform" />
+                    </button>
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" /> Cooldown: <span className="text-slate-900 font-mono">24 Hours</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+              
+              <section>
+                  <div className="flex items-center gap-4 mb-10 pl-2">
+                    <h3 className="font-black text-[10px] text-slate-400 tracking-[0.3em] uppercase whitespace-nowrap">Asset Specifications</h3>
+                    <div className="h-px flex-grow bg-indigo-50" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <DetailCard title="Native Token" value="$NYRA" icon={<Droplets size={24} />} />
+                      <DetailCard title="Network Tier" value="Testnet" icon={<Network size={24} />} />
+                      <DetailCard title="Settlement" value="Base Sepolia" icon={<Layers size={24} />} />
+                      <DetailCard title="Token Standard" value="ERC-20" icon={<FileCode size={24} />} />
+                  </div>
+              </section>
+            </div>
+          </motion.div>
+        </main>
         
-        {/* Modal Backdrop & Container */}
         <AnimatePresence>
-          {(isMinting || isSuccess) && (
-            <motion.div 
-                key="backdrop" 
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-            >
-              {isMinting && <MintingProgressModal step={mintStep} />}
-              {isSuccess && <SuccessModal onClose={handleCloseSuccess} />}
+          {isMinting && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[300] flex items-center justify-center bg-indigo-950/10 backdrop-blur-xl p-4">
+              <MintingProgressModal step={mintStep} />
+            </motion.div>
+          )}
+          {isSuccess && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[300] flex items-center justify-center bg-indigo-950/10 backdrop-blur-xl p-4">
+              <SuccessModal onClose={() => setIsSuccess(false)} />
             </motion.div>
           )}
         </AnimatePresence>
       </div>
     );
-  }
+}

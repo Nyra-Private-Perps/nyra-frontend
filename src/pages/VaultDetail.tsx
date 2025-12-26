@@ -4,81 +4,55 @@ import { VaultDetail } from "../components/Vaults/VaultDetail";
 import { useVaults } from "../lib/hyperliquid"; 
 import { Loader, AlertTriangle, ArrowLeft } from "lucide-react";
 import { AnimatedGradientBackground } from "../components/UI/AnimatedBackgroud";
+import OutstandingBackground from "../components/UI/AnimatedGradientBackground";
 
 export default function VaultDetailPage() {
-  // 1. Get the slug from the URL
   const { slug } = useParams<{ slug: string }>();
-  
-  // 2. Fetch all vaults
   const { data: vaults, isLoading, error } = useVaults();
-
-  // 3. Find the specific vault
   const vault = vaults?.find((v) => v.slug === slug);
 
-  // --- Loading State ---
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-black text-white relative overflow-hidden">
-        <AnimatedGradientBackground />
-        <Header />
-        <div className="relative z-10 flex h-[80vh] items-center justify-center">
-          <div className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white/5 backdrop-blur-sm border border-white/10">
-            <Loader className="animate-spin text-blue-500 w-10 h-10" />
-            <p className="text-gray-400 font-medium tracking-wide">Loading Strategy...</p>
-          </div>
+      <div className="min-h-screen bg-[#FDFDFF] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader className="animate-spin text-indigo-600 w-10 h-10" />
+          <p className="text-indigo-900/40 font-bold uppercase tracking-widest text-[10px]">Syncing Strategy...</p>
         </div>
       </div>
     );
   }
 
-  // --- Error or Not Found State ---
   if (error || !vault) {
     return (
-      <div className="min-h-screen bg-black text-white relative overflow-hidden">
-        <AnimatedGradientBackground />
-        <Header />
-        <div className="relative z-10 flex h-[80vh] items-center justify-center px-6">
-          <div className="text-center bg-gray-900/60 p-10 rounded-3xl border border-white/10 backdrop-blur-xl shadow-2xl max-w-md w-full">
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-              <AlertTriangle className="text-red-500 w-8 h-8" />
-            </div>
-            <h1 className="text-2xl font-bold text-white mb-2">Vault Not Found</h1>
-            <p className="text-gray-400 mb-8 leading-relaxed">
-              The strategy <span className="text-white font-mono bg-white/10 px-1 rounded">{slug}</span> does not exist or is currently unavailable.
-            </p>
-            <Link 
-              to="/vaults" 
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-colors w-full"
-            >
-              <ArrowLeft size={18} /> Back to Strategies
-            </Link>
-          </div>
+      <div className="min-h-screen bg-[#FDFDFF] flex items-center justify-center px-6">
+        <div className="text-center bg-white p-10 rounded-[3rem] border border-red-100 shadow-2xl max-w-md w-full">
+          <AlertTriangle className="text-red-500 w-12 h-12 mx-auto mb-6" />
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Vault Not Found</h1>
+          <Link to="/vaults" className="inline-flex items-center gap-2 text-indigo-600 font-bold mt-4 hover:underline">
+            <ArrowLeft size={18} /> Back to Strategies
+          </Link>
         </div>
       </div>
     );
   }
 
-  // --- Success State ---
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-blue-500/30 relative">
-      {/* Background Layer */}
-      <div className="fixed inset-0 z-0">
-        <AnimatedGradientBackground />
+    <div className="min-h-screen bg-[#F8F9FF] selection:bg-indigo-100 relative">
+      {/* Soft Ambient Background Orbs */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-40">
+        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-indigo-100 blur-[140px] rounded-full" />
+        <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-purple-100 blur-[120px] rounded-full" />
       </div>
 
-      {/* Content Layer */}
       <div className="relative z-10 flex flex-col min-h-screen">
         <Header />
-        
+        <OutstandingBackground />
         <main className="flex-grow pt-32 pb-20 px-6">
-          <div className="max-w-7xl mx-auto">
-            <VaultDetail vault={vault} />
-          </div>
+          <VaultDetail vault={vault} />
         </main>
-
-        <footer className="w-full py-8 border-t border-white/10 bg-black/80 backdrop-blur-xl">
-          <div className="max-w-7xl mx-auto text-center text-gray-500 text-sm px-6">
-            © 2025 Nyra • Private Perpetual Vaults • Data from DefiLlama
+        <footer className="w-full py-10 border-t border-indigo-50 bg-white/40 backdrop-blur-md">
+          <div className="max-w-7xl mx-auto text-center text-gray-400 text-xs px-6 uppercase tracking-widest font-medium">
+            © 2025 Nyra Protocol • High Precision Yield Aggregator
           </div>
         </footer>
       </div>

@@ -1,10 +1,8 @@
-"use client"
-
 import { useEffect, useState } from "react"
 import { useAccount } from "wagmi"
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { TransactionModal } from "./TransactionModal"
-import { ArrowLeft, Info, Activity, ShieldCheck, Wallet } from "lucide-react"
+import { ArrowLeft, Info, Activity, ShieldCheck, Wallet, TrendingUp } from "lucide-react"
 import { motion, AnimatePresence, type Variants } from "framer-motion"
 import { contractService } from "../../services/contractService";
 import { ErrorModal, InProgressModal, ModalWrapper, SuccessModal } from "../DepositAnimation/StatusModals"
@@ -12,75 +10,25 @@ import { Link } from "react-router-dom"
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1, ease: "easeOut" },
-  },
+  visible: { opacity: 1, transition: { staggerChildren: 0.1 } },
 }
 
 const itemVariants: Variants = {
   hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
 }
 
-// Styled StatCard component - Keeping your original logic/props
-const StatCard = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex justify-between items-center py-4 border-b border-white/5 last:border-0 group">
-    <span className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">{label}</span>
-    <span className="text-sm font-mono font-medium text-white">{value}</span>
+const StatRow = ({ label, value }: { label: string; value: string }) => (
+  <div className="flex justify-between items-center py-4 border-b border-indigo-50 last:border-0">
+    <span className="text-sm font-medium text-gray-400">{label}</span>
+    <span className="text-base font-bold text-gray-900 tracking-tight">{value}</span>
   </div>
 )
-
-// Keeping your original Table structures exactly as they were
-const HoldingsTable = () => (
-  <div className="overflow-x-auto">
-    <table className="w-full text-sm text-left">
-      <thead className="text-xs text-gray-500 uppercase bg-white/5">
-        <tr>
-          <th scope="col" className="px-6 py-4 font-medium rounded-l-lg">Token</th>
-          <th scope="col" className="px-6 py-4 font-medium">Value</th>
-          <th scope="col" className="px-6 py-4 font-medium text-right rounded-r-lg">Amount</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-white/5">
-        <tr>
-          <td colSpan={3} className="text-center py-16 px-6 text-gray-500">
-            You do not have any holdings in this vault yet.
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-);
-
-const TransactionsTable = () => (
-  <div className="overflow-x-auto">
-    <table className="w-full text-sm text-left">
-      <thead className="text-xs text-gray-500 uppercase bg-white/5">
-        <tr>
-          <th scope="col" className="px-6 py-4 font-medium rounded-l-lg">Date</th>
-          <th scope="col" className="px-6 py-4 font-medium">Type</th>
-          <th scope="col" className="px-6 py-4 font-medium">Asset</th>
-          <th scope="col" className="px-6 py-4 font-medium">Amount</th>
-          <th scope="col" className="px-6 py-4 font-medium">Price</th>
-          <th scope="col" className="px-6 py-4 font-medium text-right rounded-r-lg">Status</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-white/5">
-        <tr>
-          <td colSpan={6} className="text-center py-16 px-6 text-gray-500">
-            You have no transactions for this vault yet.
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-);
 
 export function VaultDetail({ vault }: { vault: any }) {
   const { isConnected } = useAccount()
   const [activeInfoTab, setActiveInfoTab] = useState<"Overview" | "Holdings" | "My Transactions">("Overview")
-  const [timeRange, setTimeRange] = useState("1Y")
+  const [timeRange, setTimeRange] = useState("1M")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalType, setModalType] = useState<"deposit" | "withdraw">("deposit")
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
@@ -91,16 +39,16 @@ export function VaultDetail({ vault }: { vault: any }) {
   const [displayPerformance, setDisplayPerformance] = useState("");
 
   const strategy = `This vault uses ${vault.project} to trade ${vault.symbol} perpetuals. It employs automated risk management with dynamic leverage adjustment based on market volatility. The strategy aims for capital appreciation while preserving principal through TEE-secured execution.`
-  const userBalance = isConnected ? `$${Math.round(vault.tvlUsd * 0.001).toLocaleString()}` : "Connect Wallet"
-  const userTotalBalance = isConnected ? "$100" : "Connect Wallet"
-  const userTotalGain = isConnected ? "+$10 (+1.3%)" : "Connect to View"
+  const userBalance = isConnected ? `$${Math.round(vault.tvlUsd * 0.001).toLocaleString()}` : "$0.00"
+  const userTotalBalance = isConnected ? "$100" : "$0.00"
+  const userTotalGain = isConnected ? "+$10 (+1.3%)" : "+$0.00"
 
   const chartData = vault.chartData.map((d: any, i: number) => ({ name: `Day ${i + 1}`, uv: d.v }))
 
   const riskLevelStyles: { [key: string]: string } = {
-    "Low Risk": "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-    "Medium Risk": "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
-    "High Risk": "text-red-400 bg-red-500/10 border-red-500/20",
+    "Low Risk": "text-emerald-600 bg-emerald-50 border-emerald-100",
+    "Medium Risk": "text-amber-600 bg-amber-50 border-amber-100",
+    "High Risk": "text-orange-600 bg-orange-50 border-orange-100",
   }
 
   useEffect(() => {
@@ -160,42 +108,46 @@ export function VaultDetail({ vault }: { vault: any }) {
   };
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <motion.div variants={containerVariants} initial="hidden" animate="visible">
-        <Link to="/vaults" className="inline-flex items-center gap-2 text-gray-500 hover:text-white mb-8 text-sm font-medium transition-colors group">
-          <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-          Back to All Vaults
+    <div className="max-w-[1300px] mx-auto">
+      {/* Breadcrumb */}
+      <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="mb-10">
+        <Link to="/vaults" className="inline-flex items-center gap-2 text-indigo-400 font-bold text-sm uppercase tracking-widest hover:text-indigo-600 transition-colors">
+          <ArrowLeft size={16} /> Back to All Vaults
         </Link>
       </motion.div>
 
-      <motion.div variants={itemVariants} initial="hidden" animate="visible" transition={{ delay: 0.1 }}>
-        <div className="flex items-center gap-4 mb-10">
-           <div className="w-12 h-12 rounded-2xl bg-blue-600/20 flex items-center justify-center border border-blue-500/20">
-              <Activity className="text-blue-400 w-6 h-6" />
-           </div>
-          <h1 className="text-4xl font-bold text-white tracking-tight">{vault.name}</h1>
+      {/* Header Title Section */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-12 flex items-center gap-6">
+        <div className="w-16 h-16 rounded-[1.5rem] bg-indigo-600 flex items-center justify-center shadow-xl shadow-indigo-200">
+          <Activity className="text-white w-8 h-8" />
+        </div>
+        <div>
+          <h1 className="text-5xl font-bold text-gray-950 tracking-tighter">{vault.name}</h1>
+          <p className="text-gray-400 font-medium uppercase text-xs tracking-[0.2em] mt-1">Aggregated Perpetual Strategy</p>
         </div>
       </motion.div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
-        {/* Left Column */}
-        <motion.div className="lg:col-span-2 space-y-8" variants={itemVariants} initial="hidden" animate="visible" transition={{ delay: 0.2 }}>
+      <div className="grid lg:grid-cols-3 gap-10 items-start">
+        {/* Left/Middle: Chart & Logic */}
+        <div className="lg:col-span-2 space-y-10">
           
-          {/* Chart Section */}
-          <div className="bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
-            <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
+          {/* Main Chart Card */}
+          <motion.div variants={itemVariants} initial="hidden" animate="visible" className="bg-white/70 backdrop-blur-3xl rounded-[2.5rem] p-10 border border-white shadow-[0_30px_60px_rgba(0,0,0,0.02)]">
+            <div className="flex justify-between items-start mb-10 flex-wrap gap-4">
               <div>
-                <p className="text-sm font-medium text-gray-400 mb-1">Vault Performance</p>
-                <p className="text-3xl font-bold text-white">{userBalance}</p>
-                <p className="text-sm font-bold text-emerald-400 mt-1">{displayPerformance} Past 1Y</p>
+                <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Vault Performance</p>
+                <h2 className="text-5xl font-bold text-gray-950 tracking-tighter mb-2">{userBalance}</h2>
+                <div className="flex items-center gap-1 text-emerald-500 font-bold text-sm">
+                  <TrendingUp size={16} /> {displayPerformance} Past 1Y
+                </div>
               </div>
-              <div className="flex bg-white/5 border border-white/5 rounded-xl p-1">
-                {["1M", "ALL"].map((range) => (
+              <div className="flex bg-indigo-50/50 p-1.5 rounded-2xl border border-indigo-50">
+                {["1W", "1M", "ALL"].map((range) => (
                   <button
                     key={range}
                     onClick={() => setTimeRange(range)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      timeRange === range ? "bg-white/10 text-white shadow-sm border border-white/10" : "text-gray-500 hover:text-gray-300"
+                    className={`px-5 py-2 rounded-xl text-xs font-bold transition-all ${
+                      timeRange === range ? "bg-white text-indigo-600 shadow-md" : "text-gray-400 hover:text-indigo-400"
                     }`}
                   >
                     {range}
@@ -203,124 +155,142 @@ export function VaultDetail({ vault }: { vault: any }) {
                 ))}
               </div>
             </div>
-            <div className="h-80 -ml-6">
+            
+            <div className="h-72 -ml-8">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <Tooltip
-                    cursor={{ stroke: "#3B82F6", strokeWidth: 1, strokeDasharray: "4 4" }}
                     contentStyle={{
-                      background: "#0a0a0a",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: "12px",
-                      boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+                      background: "rgba(255, 255, 255, 0.9)",
+                      backdropFilter: "blur(10px)",
+                      border: "1px solid #eef2ff",
+                      borderRadius: "16px",
+                      boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
                     }}
-                    itemStyle={{ color: "#fff" }}
                   />
                   <XAxis dataKey="name" hide />
-                  <Area type="monotone" dataKey="uv" stroke="#3B82F6" strokeWidth={3} fill="url(#chartGradient)" />
+                  <Area type="monotone" dataKey="uv" stroke="#6366f1" strokeWidth={4} fill="url(#chartGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </motion.div>
 
-          {/* Tabs Section */}
-          <div className="bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden min-h-[400px]">
-            <div className="flex border-b border-white/5 px-6 bg-white/5">
-            {["Overview", "Holdings", "My Transactions"].map((tab) => (
+          {/* Logic & Tabs Card */}
+          <motion.div variants={itemVariants} initial="hidden" animate="visible" className="bg-white/70 backdrop-blur-3xl rounded-[2.5rem] p-10 border border-white shadow-[0_30px_60px_rgba(0,0,0,0.02)] min-h-[400px]">
+            <div className="flex gap-10 border-b border-indigo-50 mb-10">
+              {["Overview", "Holdings", "My Transactions"].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveInfoTab(tab as any)}
-                  className={`relative py-5 px-6 text-sm font-bold transition-colors ${
-                    activeInfoTab === tab ? "text-blue-400" : "text-gray-500 hover:text-gray-300"
+                  className={`pb-5 text-sm font-bold uppercase tracking-widest transition-all relative ${
+                    activeInfoTab === tab ? "text-indigo-600" : "text-gray-400 hover:text-indigo-400"
                   }`}
                 >
                   {tab}
                   {activeInfoTab === tab && (
-                    <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                    <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-full" />
                   )}
                 </button>
               ))}
             </div>
-            <div className="p-8">
-              <AnimatePresence mode="wait">
+            
+            <AnimatePresence mode="wait">
+              <motion.div 
+                key={activeInfoTab}
+                initial={{ opacity: 0, y: 10 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
                 {activeInfoTab === 'Overview' && (
-                  <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                    <h3 className="text-lg font-bold text-white mb-4">Strategy Logic</h3>
-                    <p className="text-gray-400 text-md leading-relaxed">{strategy}</p>
-                  </motion.div>
+                  <div className="max-w-2xl">
+                    <div className="flex items-center gap-2 mb-4">
+                      <h3 className="text-xl font-bold text-gray-900 tracking-tight">Strategy Logic</h3>
+                      <Info size={16} className="text-gray-300" />
+                    </div>
+                    <p className="text-gray-500 text-lg leading-relaxed mb-8 font-light">{strategy}</p>
+                    <div className="flex gap-3">
+                       <span className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-100">Automated Risk Mgmt</span>
+                       <span className="px-4 py-2 bg-purple-50 text-purple-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-purple-100">Dynamic Leverage</span>
+                    </div>
+                  </div>
                 )}
-                {activeInfoTab === 'Holdings' && (
-                  <motion.div key="holdings" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                    <HoldingsTable />
-                  </motion.div>
-                )}
-                {activeInfoTab === 'My Transactions' && (
-                  <motion.div key="transactions" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                    <TransactionsTable />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-        </motion.div>
+                {activeInfoTab === 'Holdings' && <div className="text-gray-400 text-sm italic font-light py-10">Searching decentralized ledgers for your positions...</div>}
+                {activeInfoTab === 'My Transactions' && <div className="text-gray-400 text-sm italic font-light py-10">No recent activity detected on-chain.</div>}
+              </motion.div>
+            </AnimatePresence>
+          </motion.div>
+        </div>
 
-        {/* Right Column */}
-        <motion.div className="space-y-6" variants={itemVariants} initial="hidden" animate="visible" transition={{ delay: 0.3 }}>
+        {/* Right Column: Actions & Stats */}
+        <div className="space-y-10">
           
-          {/* Balance Card */}
-          <div className="bg-gradient-to-b from-blue-600/10 to-purple-600/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+          {/* "My Position" - Reference Image Layout */}
+          <motion.div variants={itemVariants} initial="hidden" animate="visible" className="bg-white rounded-[2.5rem] p-10 border border-white shadow-[0_40px_100px_rgba(79,70,229,0.05)] relative overflow-hidden">
             <div className="relative z-10">
-              <div className="flex items-center gap-3 mb-6">
-                <Wallet className="text-blue-400 w-5 h-5" />
-                <h3 className="text-lg font-bold text-white">My Position</h3>
+              <div className="flex items-center gap-3 mb-8">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                  <Wallet size={20} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-950 tracking-tight">My Position</h3>
               </div>
-              <p className="text-sm font-medium text-gray-400 mb-1">Total Balance</p>
-              <p className="text-4xl font-bold text-white mb-1">{userTotalBalance}</p>
-              <p className="text-sm font-bold text-emerald-400 mb-8">{userTotalGain} All Time</p>
               
-              <div className="flex gap-4">
+              <div className="mb-10">
+                <p className="text-sm font-medium text-gray-400 mb-1">Total Balance</p>
+                <div className="flex items-baseline gap-2">
+                   <h2 className="text-6xl font-bold text-gray-950 tracking-tighter">{userTotalBalance}</h2>
+                   <span className="text-gray-400 font-bold text-sm">USD</span>
+                </div>
+                <p className="text-sm font-bold text-emerald-500 mt-2">{userTotalGain} All Time</p>
+              </div>
+              
+              <div className="flex gap-4 mb-10">
                 <button
                   onClick={() => openModal("deposit")}
-                  className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20 active:scale-95"
+                  className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold transition-all shadow-xl shadow-indigo-100 active:scale-95"
                 >
                   Deposit
                 </button>
                 <button
                   onClick={() => openModal("withdraw")}
-                  className="flex-1 py-4 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-2xl font-bold transition-all active:scale-95"
+                  className="flex-1 py-4 bg-white border border-indigo-50 text-gray-600 hover:bg-indigo-50 rounded-2xl font-bold transition-all active:scale-95"
                 >
                   Withdraw
                 </button>
               </div>
 
-              <div className="flex items-start gap-3 text-xs p-4 rounded-xl bg-blue-500/5 border border-blue-500/10 mt-8 text-blue-300/80">
-                <Info size={16} className="shrink-0" />
-                <span>Mint your NYRA tokens from the Faucet before depositing.</span>
+              <div className="flex items-start gap-3 p-5 rounded-2xl bg-indigo-50/50 border border-indigo-100 text-indigo-900/60 text-xs leading-relaxed font-medium">
+                <Info size={18} className="shrink-0 text-indigo-400" />
+                <span>Mint your NYRA tokens from the Faucet before depositing into the vault.</span>
               </div>
             </div>
-          </div>
+          </motion.div>
 
-          {/* Stats Card */}
-          <div className="bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Vault Stats</h3>
-            <StatCard label="Current APY" value={vault.apy} />
-            <StatCard label="TVL" value={vault.tvl} />
-            <div className="flex justify-between items-center pt-4">
-              <span className="text-sm text-gray-400">Risk Level</span>
-              <span className={`font-bold px-3 py-1 rounded-full text-[10px] border flex items-center gap-1.5 ${riskLevelStyles[vault.risk]}`}>
-                <ShieldCheck size={12} /> {vault.risk}
-              </span>
+          {/* "Vault Stats" - Reference Image Layout */}
+          <motion.div variants={itemVariants} initial="hidden" animate="visible" className="bg-white/70 backdrop-blur-3xl rounded-[2.5rem] p-10 border border-white shadow-[0_30px_60px_rgba(0,0,0,0.02)]">
+            <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6">Vault Stats</h3>
+            <div className="space-y-2">
+              <StatRow label="Current APY" value="6.4%" />
+              <StatRow label="TVL" value="$213.9M" />
+              <div className="flex justify-between items-center py-4">
+                <span className="text-sm font-medium text-gray-400">Risk Level</span>
+                <span className={`font-bold px-4 py-1.5 rounded-full text-[10px] uppercase tracking-widest border flex items-center gap-2 ${riskLevelStyles[vault.risk]}`}>
+                  <ShieldCheck size={14} /> {vault.risk}
+                </span>
+              </div>
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
+
+        </div>
       </div>
 
+      {/* Preservation of Modals */}
       <AnimatePresence>
         {(isModalOpen || isTxModalOpen) && (
           <TransactionModal
@@ -329,15 +299,9 @@ export function VaultDetail({ vault }: { vault: any }) {
             onSubmit={handleTransactionSubmit}
           />
         )}
-        {isProcessing && (
-          <ModalWrapper><InProgressModal step={processingStep} maxSteps={4} /></ModalWrapper>
-        )}
-        {isSuccess && (
-          <ModalWrapper><SuccessModal onClose={resetStatusModals} /></ModalWrapper>
-        )}
-        {isError && (
-          <ModalWrapper><ErrorModal onClose={resetStatusModals} /></ModalWrapper>
-        )}
+        {isProcessing && <ModalWrapper><InProgressModal step={processingStep} maxSteps={4} /></ModalWrapper>}
+        {isSuccess && <ModalWrapper><SuccessModal onClose={resetStatusModals} /></ModalWrapper>}
+        {isError && <ModalWrapper><ErrorModal onClose={resetStatusModals} /></ModalWrapper>}
       </AnimatePresence>
     </div>
   )

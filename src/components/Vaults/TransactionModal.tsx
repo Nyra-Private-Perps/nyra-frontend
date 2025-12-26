@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useAccount } from "wagmi"
-import { X, Wallet, Info } from "lucide-react"
+import { X, Wallet, Info, Sparkles } from "lucide-react"
 import { motion } from "framer-motion"
 
 interface TransactionModalProps {
@@ -19,14 +19,9 @@ export function TransactionModal({ type, onClose, onSubmit }: TransactionModalPr
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setAmount(val);
-    
-    if (val && parseFloat(val) < 0) {
-      setError("Amount cannot be negative");
-    } else if (val && isNaN(Number(val))) {
-      setError("Invalid number");
-    } else {
-      setError("");
-    }
+    if (val && parseFloat(val) < 0) setError("Amount cannot be negative");
+    else if (val && isNaN(Number(val))) setError("Invalid number");
+    else setError("");
   }
 
   const handleTransaction = () => {
@@ -39,10 +34,8 @@ export function TransactionModal({ type, onClose, onSubmit }: TransactionModalPr
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[100] p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-indigo-950/10 backdrop-blur-xl flex items-center justify-center z-[250] p-4"
       onClick={onClose}
     >
       <motion.div
@@ -50,84 +43,66 @@ export function TransactionModal({ type, onClose, onSubmit }: TransactionModalPr
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
-        className="bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] w-full max-w-md p-8 text-white shadow-2xl relative overflow-hidden"
+        className="bg-white/90 border border-white rounded-[3.5rem] w-full max-w-md p-10 text-gray-900 shadow-[0_50px_100px_rgba(0,0,0,0.1)] relative overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Subtle background glow */}
-        <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-600/10 blur-[80px] rounded-full pointer-events-none" />
+        <div className="absolute -top-24 -right-24 w-64 h-64 bg-indigo-100/50 blur-[100px] rounded-full pointer-events-none" />
 
         <div className="relative z-10">
           {/* Header */}
-          <div className="flex justify-between items-center mb-8">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-600/20 flex items-center justify-center border border-blue-500/20">
-                <Wallet size={20} className="text-blue-400" />
+          <div className="flex justify-between items-center mb-10">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-100">
+                <Wallet size={24} className="text-white" />
               </div>
-              <h2 className="text-2xl font-bold capitalize">{type} Funds</h2>
+              <h2 className="text-3xl font-bold tracking-tighter capitalize">{type}</h2>
             </div>
-            <button 
-              onClick={onClose} 
-              className="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all"
-            >
+            <button onClick={onClose} className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-400 hover:text-gray-900 transition-all">
               <X size={20} />
             </button>
           </div>
 
-          {/* Faucet Reminder Message */}
-          <div className="flex items-start gap-3 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10 mb-8 text-blue-300/80 text-xs">
-            <Info size={16} className="shrink-0" />
-            <p>Make sure you have minted your testnet NYRA tokens from the Faucet before proceeding.</p>
+          {/* Elite Faucet Box */}
+          <div className="flex items-start gap-4 p-5 rounded-[2rem] bg-indigo-50/50 border border-indigo-100 mb-10 text-indigo-900/70 text-[11px] font-bold uppercase tracking-widest leading-relaxed">
+            <Sparkles size={18} className="shrink-0 text-indigo-400" />
+            <p>Ensure you have minted your testnet NYRA tokens from the Faucet before initiating this {type}.</p>
           </div>
 
           {/* Input Section */}
-          <div className="space-y-4">
-            <div className="flex justify-between items-end px-1">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">
-                Amount to {type}
+          <div className="space-y-5">
+            <div className="flex justify-between items-end px-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+                Enter Amount
               </label>
-              <p className="text-[10px] text-gray-500">
-                Available: <span className="text-gray-300 font-mono font-bold">$12,842.50</span>
+              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
+                Balance: <span className="text-gray-900 font-mono">$12,842.50</span>
               </p>
             </div>
             
             <div className="relative group">
               <input
-                type="number"
-                placeholder="0.00"
-                value={amount}
-                onChange={handleAmountChange}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-5 text-white text-2xl font-mono placeholder:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                type="number" placeholder="0.00" value={amount} onChange={handleAmountChange}
+                className="w-full h-20 bg-gray-50/50 border border-indigo-50 rounded-[1.8rem] px-8 text-3xl font-serif italic text-gray-900 placeholder:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all shadow-inner"
               />
-              <button className="absolute right-4 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold text-blue-400 transition-all border border-white/5 active:scale-95">
+              <button className="absolute right-4 top-1/2 -translate-y-1/2 px-5 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100 hover:bg-indigo-700 active:scale-90 transition-all">
                 MAX
               </button>
             </div>
             
-            {error && (
-              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-red-400 font-medium px-1">
-                {error}
-              </motion.p>
-            )}
+            {error && <p className="text-xs text-rose-500 font-bold px-2 uppercase tracking-tighter">{error}</p>}
           </div>
 
-          {/* Action Button */}
-          <div className="mt-10">
+          <div className="mt-12">
             <button
               onClick={handleTransaction}
               disabled={isButtonDisabled}
-              className={`w-full py-5 rounded-2xl font-bold text-lg transition-all duration-300 flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 active:scale-[0.98] ${
+              className={`w-full h-16 rounded-[1.8rem] font-black text-xs uppercase tracking-[0.3em] transition-all duration-300 shadow-xl active:scale-95 ${
                 isButtonDisabled
-                  ? "bg-white/5 text-gray-600 border border-white/5 cursor-not-allowed shadow-none"
-                  : "bg-blue-600 text-white hover:bg-blue-500"
+                  ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed shadow-none"
+                  : "bg-gray-950 text-white hover:bg-black shadow-indigo-100"
               }`}
             >
-              {isConnected ? (
-                <>
-                   <span className="capitalize">{type}</span>
-                </>
-              ) : (
-                "Connect Wallet"
-              )}
+              {isConnected ? `Initiate ${type}` : "Connect Wallet"}
             </button>
           </div>
         </div>
