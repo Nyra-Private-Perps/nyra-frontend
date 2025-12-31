@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { motion, useScroll, useSpring } from "framer-motion";
+import { AnimatePresence, motion, useScroll, useSpring } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ArrowRight, Shield, Play, Eye, Link as LinkIcon, Activity, Wallet, Layers, Fingerprint, CandlestickChart, ShieldCheck, Ban, CheckCircle2, Zap,Users, Landmark,  Cpu } from "lucide-react";
+import { ArrowRight, Shield, Play, Eye, Link as LinkIcon, Activity, Wallet, Layers, Fingerprint, CandlestickChart, ShieldCheck, Ban, CheckCircle2, Zap,Users, Landmark,  Cpu, Lock, LayoutGrid, Share2, LogIn, MoveRight } from "lucide-react";
 import { Header } from "../components/Header/Header";
 import Lenis from "lenis";
 import EliteFooter from "../components/UI/Footer";
+import NyraConstellation from "../components/UI/Constelation";
 
 const DEX_NODES = [
   { name: 'Hyperliquid', logo: '/hyperliquid.png' },
@@ -24,6 +25,73 @@ const USER_NODES = [
   { name: 'Protocols', icon: <Cpu size={20} /> }
 ];
 
+const NODES = [
+  {
+    id: 'deposit',
+    title: 'Horizen Deposit',
+    icon: <LogIn size={24} />,
+    pos: { top: '50%', left: '10%' },
+    color: '#3b82f6',
+    description: 'Assets enter via the Horizen shielded pool, instantly detaching your deposit from your public identity.',
+    detailTitle: 'Shielded Entry'
+  },
+  {
+    id: 'tee',
+    title: 'TEE Architecture',
+    icon: <Shield size={32} />,
+    pos: { top: '35%', left: '28%' },
+    color: '#6366f1',
+    isLarge: true,
+    description: 'Trade intents are processed inside encrypted enclaves. Data is mathematically isolated from all observers.',
+    detailTitle: 'Black Box Computation'
+  },
+  {
+    id: 'batched',
+    title: 'Batched Deposits',
+    icon: <Layers size={20} />,
+    pos: { top: '65%', left: '42%' },
+    color: '#a855f7',
+    description: 'Individual orders are aggregated into large, anonymous batches, making correlation impossible.',
+    detailTitle: 'Aggregation Layer'
+  },
+  {
+    id: 'vaults',
+    title: 'Multi-Strategy Vaults',
+    icon: <LayoutGrid size={20} />,
+    pos: { top: '25%', left: '50%' },
+    color: '#06b6d4',
+    description: 'Vaults automatically route your shielded assets to the most optimal trading strategies available.',
+    detailTitle: 'Smart Routing'
+  },
+  {
+    id: 'hub',
+    title: 'Cross-Chain Hub',
+    icon: <Share2 size={24} />,
+    pos: { top: '55%', left: '65%' },
+    color: '#64748b',
+    description: "Nyra's architecture bridges privacy across multiple chains without user-facing friction.",
+    detailTitle: 'Seamless Bridging'
+  },
+  {
+    id: 'dex',
+    title: 'Hyperliquid & Paradex',
+    icon: <CandlestickChart size={20} />,
+    pos: { top: '30%', left: '80%' },
+    color: '#2563eb',
+    description: 'Execute trades on premier perpetual DEXs with institutional-grade fills and minimal slippage.',
+    detailTitle: 'Deep Liquidity'
+  },
+  {
+    id: 'withdrawal',
+    title: 'Private Withdrawals',
+    icon: <Lock size={24} />,
+    pos: { top: '70%', left: '88%' },
+    color: '#10b981',
+    description: 'Profits are withdrawn to fresh wallets using ZK-proofs, severing all links to the original source.',
+    detailTitle: 'Clean Exit'
+  }
+];
+
 // --- 1. UTILITY: PREMIUM SMOOTH REVEAL ---
 const SmoothReveal = ({ children, delay = 0, x = 0, y = 30 }: any) => (
   <motion.div
@@ -34,6 +102,19 @@ const SmoothReveal = ({ children, delay = 0, x = 0, y = 30 }: any) => (
   >
     {children}
   </motion.div>
+);
+
+const DataStream = ({ from, to }: { from: { x: number; y: number }; to: { x: number; y: number } }) => (
+  <motion.path
+    d={`M ${from.x} ${from.y} L ${to.x} ${to.y}`}
+    fill="transparent"
+    stroke="url(#flowGradient)"
+    strokeWidth="2"
+    strokeDasharray="10, 20"
+    initial={{ strokeDashoffset: 100 }}
+    animate={{ strokeDashoffset: 0 }}
+    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+  />
 );
 
 // --- 2. SUB-COMPONENTS ---
@@ -53,66 +134,6 @@ function TransactionLeak({ label, delay }: { label: string; delay: number }) {
     </motion.div>
   );
 }
-
-const PrivacyArchGraphic = () => (
-  <div className="relative w-full h-full flex items-center justify-center pointer-events-none">
-    {/* Stacked Cards Visualization */}
-    <div className="relative w-48 h-48 perspective-[1000px]">
-      {/* Bottom Card */}
-      <motion.div 
-        animate={{ y: [0, -5, 0], rotateX: [60, 58, 60], rotateZ: [45, 47, 45] }}
-        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute inset-0 bg-gray-900/40 rounded-3xl border border-white/10 translate-y-12"
-      />
-      {/* Middle Card (Purple) */}
-      <motion.div 
-        animate={{ y: [0, -10, 0], rotateX: [60, 58, 60], rotateZ: [45, 47, 45] }}
-        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-        className="absolute inset-0 bg-indigo-600 rounded-3xl border border-white/20 translate-y-6 shadow-xl"
-      />
-      {/* Top Card (White/Interface) */}
-      <motion.div 
-        animate={{ y: [0, -15, 0], rotateX: [60, 58, 60], rotateZ: [45, 47, 45] }}
-        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-        className="absolute inset-0 bg-white/90 backdrop-blur-xl rounded-3xl border border-white p-4 shadow-2xl flex flex-col gap-2"
-      >
-        <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <motion.div animate={{ width: ["20%", "80%", "20%"] }} transition={{ duration: 4, repeat: Infinity }} className="h-full bg-indigo-500" />
-        </div>
-        <div className="w-2/3 h-1.5 bg-gray-100 rounded-full" />
-        <div className="w-full h-1.5 bg-green-500/20 rounded-full" />
-      </motion.div>
-    </div>
-  </div>
-);
-
-const AnonWithdrawalGraphic = () => (
-  <div className="relative w-full h-32 flex items-center justify-center">
-    <div className="absolute inset-0 flex items-center justify-center">
-      <motion.div animate={{ rotate: 360 }} transition={{ duration: 15, repeat: Infinity, ease: "linear" }} className="w-24 h-24 border border-dashed border-white/10 rounded-full" />
-      <motion.div animate={{ rotate: -360 }} transition={{ duration: 10, repeat: Infinity, ease: "linear" }} className="w-16 h-16 border-2 border-indigo-500/40 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.3)]">
-        <div className="w-2 h-2 bg-white rounded-full shadow-[0_0_10px_white]" />
-      </motion.div>
-    </div>
-    <div className="absolute w-full h-full">
-      <motion.div animate={{ scale: [0, 1.5, 0], opacity: [0, 0.5, 0] }} transition={{ duration: 3, repeat: Infinity }} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full blur-sm" />
-    </div>
-  </div>
-);
-
-const CrossChainGraphic = () => (
-  <div className="w-32 h-32 relative flex items-center justify-center">
-    <div className="absolute inset-0 border border-gray-100 rounded-full" />
-    <motion.div 
-      animate={{ rotate: 360 }} 
-      transition={{ duration: 8, repeat: Infinity, ease: "linear" }} 
-      className="absolute inset-[-8px]"
-    >
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3 h-3 bg-indigo-600 rounded-full shadow-lg" />
-    </motion.div>
-    <div className="w-16 h-16 bg-black text-white rounded-full flex items-center justify-center shadow-xl font-serif font-bold text-xl">Ny</div>
-  </div>
-);
 
 // --- 2. SECTION 3 GRAPHICS (Animated) ---
 
@@ -167,6 +188,7 @@ export default function HomePage() {
   const problemRef = useRef(null);
   const [time, setTime] = useState(0);
   const requestRef = useRef<number>();
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
   const width = 1000;
   const height = 800;
@@ -461,139 +483,7 @@ export default function HomePage() {
       </section>
 
         {/* --- SECTION 4: ENGINEERED FOR SILENCE (NEW INTEGRATION) --- */}
-        <section className="relative py-40 bg-gray-50/50 overflow-hidden">
-        {/* Abstract subtle orbs in background */}
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-500/5 blur-[120px] rounded-full pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-blue-500/5 blur-[120px] rounded-full pointer-events-none" />
-
-        <div className="max-w-[1400px] mx-auto px-6 relative z-10">
-          
-          {/* Section Header */}
-          <div className="flex flex-col md:flex-row justify-between items-end mb-20 gap-10">
-            <div className="max-w-3xl">
-              <SmoothReveal>
-                <h2 className="text-6xl md:text-8xl text-[#111827] leading-[0.9] tracking-tighter">
-                  Engineered for <br />
-                  <span className="italic font-serif text-transparent bg-clip-text bg-gradient-to-r from-indigo-700 via-indigo-500 to-indigo-300 pr-4">
-                    Silence.
-                  </span>
-                </h2>
-              </SmoothReveal>
-            </div>
-            <SmoothReveal delay={0.2}>
-              <p className="text-lg text-gray-500 max-w-sm text-left md:text-right leading-relaxed font-light">
-                A suite of tools designed to break the link between your identity and your alpha.
-              </p>
-            </SmoothReveal>
-          </div>
-
-          {/* Bento Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch">
-            
-            {/* 1. Privacy Architecture (Large Card) */}
-            <motion.div 
-              whileHover={{ y: -5 }}
-              className="md:col-span-8 bg-white rounded-[3rem] p-12 border border-gray-100 shadow-xl shadow-gray-200/40 relative overflow-hidden group flex flex-col justify-between min-h-[500px]"
-            >
-              <div className="relative z-10 max-w-md">
-                <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center text-white mb-8 group-hover:scale-110 transition-transform">
-                  <Layers size={30} strokeWidth={1.5} />
-                </div>
-                <h3 className="text-4xl font-serif text-[#111827] mb-6">Privacy Architecture</h3>
-                <p className="text-gray-500 text-lg leading-relaxed mb-10">
-                  A vertically integrated stack. From the ZK-circuit logic to the relayer network, every layer is built to minimize data leakage while maximizing capital efficiency.
-                </p>
-                <div className="space-y-4">
-                   {["No front-running", "Slippage protection", "Mempool obfuscation"].map((text) => (
-                     <div key={text} className="flex items-center gap-3 text-sm font-bold text-[#111827]">
-                        <CheckCircle2 size={18} className="text-emerald-500" /> {text}
-                     </div>
-                   ))}
-                </div>
-              </div>
-              {/* Graphic Layer */}
-              <div className="absolute top-1/2 right-0 -translate-y-1/2 hidden lg:block">
-                 <PrivacyArchGraphic />
-              </div>
-            </motion.div>
-
-            {/* 2. Anonymous Withdrawals (Black Card) */}
-            <motion.div 
-              whileHover={{ y: -5 }}
-              className="md:col-span-4 bg-[#0a0a0a] text-white rounded-[3rem] p-10 relative overflow-hidden flex flex-col justify-between"
-            >
-              <div className="relative z-10">
-                <div className="flex justify-between items-start mb-6">
-                  <h3 className="text-2xl font-bold leading-tight">Anonymous<br/>Withdrawals</h3>
-                  <Zap size={24} className="text-indigo-400" />
-                </div>
-                <p className="text-gray-400 text-sm leading-relaxed max-w-[200px]">Funds exit to fresh addresses, severing the link.</p>
-              </div>
-              <AnonWithdrawalGraphic />
-            </motion.div>
-
-            {/* 3. Multi-Strategy (Light Purple Card) */}
-            <motion.div 
-              whileHover={{ y: -5 }}
-              className="md:col-span-4 bg-indigo-50 rounded-[3rem] p-10 flex flex-col justify-between group min-h-[300px]"
-            >
-              <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-indigo-600 mb-6 group-hover:scale-110 transition-transform">
-                <Activity size={24} />
-              </div>
-              <div>
-                <h3 className="text-2xl font-serif text-[#111827] mb-3">Multi-Strategy</h3>
-                <p className="text-gray-500 text-sm leading-relaxed mb-6">Delta Neutral & Basis Trading accessible in one click.</p>
-                {/* Bar Chart Graphic Mockup */}
-                <div className="flex items-end gap-1.5 h-16 w-full">
-                   {[40, 70, 50, 90, 60, 45].map((h, i) => (
-                     <motion.div 
-                      key={i} 
-                      initial={{ height: 0 }}
-                      whileInView={{ height: `${h}%` }}
-                      transition={{ delay: i * 0.1, duration: 1 }}
-                      className={`flex-1 rounded-t-sm ${i === 3 ? 'bg-indigo-500' : 'bg-indigo-200'}`} 
-                     />
-                   ))}
-                </div>
-              </div>
-            </motion.div>
-
-            {/* 4. Cross-Chain (White Wide Card) */}
-            <motion.div 
-              whileHover={{ y: -5 }}
-              className="md:col-span-5 bg-white border border-gray-100 rounded-[3rem] p-10 flex flex-col md:flex-row items-center gap-10 shadow-xl shadow-gray-200/30"
-            >
-              <div className="flex-1">
-                <h3 className="text-2xl font-serif text-[#111827] mb-2">Cross-Chain</h3>
-                <p className="text-gray-500 text-sm leading-relaxed mb-6">Seamless liquidity across Arbitrum, Optimism, and Mainnet.</p>
-                <div className="flex gap-2">
-                  {["ARB", "OP", "ETH"].map(tag => (
-                    <span key={tag} className="px-3 py-1 bg-gray-50 rounded-full text-[10px] font-bold text-gray-400 border border-gray-100 tracking-widest">{tag}</span>
-                  ))}
-                </div>
-              </div>
-              <CrossChainGraphic />
-            </motion.div>
-
-            {/* 5. IP Logs (Red Card) */}
-            <motion.div 
-              whileHover={{ y: -5 }}
-              className="md:col-span-3 bg-red-50/50 border border-red-100 rounded-[3rem] p-10 text-center flex flex-col items-center justify-center group"
-            >
-              <h4 className="text-6xl font-serif text-red-500 mb-2">0</h4>
-              <p className="text-[#111827] font-bold text-xs uppercase tracking-widest mb-4">IP Logs Stored</p>
-              <motion.div 
-                animate={{ rotate: [0, 10, -10, 0] }} 
-                transition={{ duration: 4, repeat: Infinity }}
-                className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-red-300 shadow-sm border border-red-50 border-red-100"
-              >
-                <Ban size={24} />
-              </motion.div>
-            </motion.div>
-
-          </div>
-        </div>
-      </section>
+    <NyraConstellation />
 
       <section 
       className="relative py-48 bg-[#070708] text-white overflow-hidden -mt-32 z-30" 

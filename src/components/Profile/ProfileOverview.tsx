@@ -1,309 +1,260 @@
 "use client"
 
-import { useState } from "react"
-import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
-import { ChevronDown, Wallet, ArrowUpRight, ArrowDownLeft, Filter, Settings, Edit3, Sparkles } from "lucide-react"
-import { motion, AnimatePresence, type Variants } from "framer-motion"
+import React from "react"
+import { motion } from "framer-motion"
+import { 
+  AreaChart, Area, ResponsiveContainer, 
+  XAxis, YAxis, Tooltip, CartesianGrid 
+} from "recharts"
+import { 
+  Shield, Fingerprint, Copy, TrendingUp, 
+  Settings2, RefreshCw, ArrowUpRight, ArrowDownLeft 
+} from "lucide-react"
 
-// --- DUMMY DATA (Untouched) ---
+// --- STYLES ---
+const glassCard = "bg-white/65 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]"
+
+// --- DATA ---
 const chartData = [
-  { day: 1, value: 4000 }, { day: 5, value: 6200 }, { day: 10, value: 5100 },
-  { day: 15, value: 8300 }, { day: 20, value: 6500 }, { day: 25, value: 9800 },
-  { day: 30, value: 8200 },
+  { val: 2000 }, { val: 2200 }, { val: 1900 }, { val: 2400 }, 
+  { val: 2100 }, { val: 2800 }, { val: 2600 }, { val: 3200 }
 ]
 
 const holdings = [
-  { name: "Bitcoin", ticker: "BTC", price: "$50,321.80", amount: "0.45 BTC", change: "+2.4%", color: "bg-orange-100 text-orange-500 border-orange-200" },
-  { name: "Ethereum", ticker: "ETH", price: "$3,123.45", amount: "4.20 ETH", change: "-1.1%", color: "bg-blue-100 text-blue-500 border-blue-200" },
-  { name: "Solana", ticker: "SOL", price: "$125.50", amount: "150 SOL", change: "+5.7%", color: "bg-indigo-100 text-indigo-500 border-indigo-200" },
-  { name: "Nyra Token", ticker: "NYRA", price: "$1.20", amount: "5,000 NYRA", change: "+12.4%", color: "bg-purple-100 text-purple-500 border-purple-200" },
+  { name: "ETH-PERP", platform: "Uniswap v3", value: "$12,450", change: "+12.5%", pnl: "+$450.23", color: "blue", type: "eth" },
+  { name: "BTC-PERP", platform: "GMX Leverage", value: "$8,240", change: "+5.2%", pnl: "+$120.40", color: "orange", type: "btc" },
+  { name: "ARB-PERP", platform: "Gains Network", value: "$4,100", change: "-1.2%", pnl: "-$24.50", color: "cyan", type: "arb" },
 ]
-
-const transactions = [
-  { date: "Oct 26, 14:30", type: "Buy", asset: "Bitcoin (BTC)", amount: "+0.05 BTC", price: "$60,123.45", status: "Completed" },
-  { date: "Oct 25, 18:00", type: "Sell", asset: "Ethereum (ETH)", amount: "-2.0 ETH", price: "$3,450.00", status: "Completed" },
-  { date: "Oct 24, 09:15", type: "Deposit", asset: "USDC", amount: "+$5,000", price: "$1.00", status: "Completed" },
-  { date: "Oct 22, 11:45", type: "Buy", asset: "Solana (SOL)", amount: "+10.0 SOL", price: "$125.50", status: "Pending" },
-  { date: "Oct 20, 20:05", type: "Withdraw", asset: "USDC", amount: "-$1,000", price: "$1.00", status: "Failed" },
-]
-
-// --- HIGH-END ANIMATION VARIANTS ---
-const containerVariants: Variants = {
-  hidden: { opacity: 0 },
-  visible: { 
-    opacity: 1, 
-    transition: { staggerChildren: 0.08, delayChildren: 0.1 } 
-  },
-}
-
-const cardReveal: Variants = {
-  hidden: { opacity: 0, y: 30, filter: "blur(10px)", scale: 0.98 },
-  visible: { 
-    opacity: 1, y: 0, filter: "blur(0px)", scale: 1,
-    transition: { type: "spring", stiffness: 100, damping: 20 } 
-  },
-}
-
-const rowReveal: Variants = {
-  hidden: { opacity: 0, x: -10 },
-  visible: { opacity: 1, x: 0 },
-}
-
-// --- HELPER COMPONENTS ---
-const ShimmerEffect = () => (
-  <motion.div
-    initial={{ x: "-100%" }}
-    animate={{ x: "100%" }}
-    transition={{ duration: 3, repeat: Infinity, ease: "linear", repeatDelay: 5 }}
-    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none z-10"
-  />
-)
-
-const HoldingItem = ({ name, ticker, price, amount, change, color }: any) => (
-  <motion.div
-    variants={rowReveal}
-    whileHover={{ backgroundColor: "rgba(255,255,255,0.9)", x: 5, scale: 1.02 }}
-    whileTap={{ scale: 0.98 }}
-    className="flex items-center justify-between p-4 rounded-2xl border border-transparent hover:border-indigo-100 hover:shadow-sm transition-all cursor-pointer group"
-  >
-    <div className="flex items-center gap-4">
-      <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-lg border ${color} shadow-sm group-hover:rotate-12 transition-transform duration-500`}>
-        {ticker[0]}
-      </div>
-      <div>
-        <p className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">{name}</p>
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{ticker}</p>
-      </div>
-    </div>
-    <div className="text-right">
-      <p className="font-bold text-slate-800">{price}</p>
-      <div className="flex items-center justify-end gap-1.5 mt-0.5">
-        <span className="text-[11px] font-bold text-slate-400">{amount}</span>
-        <span className={`px-1.5 py-0.5 rounded text-[10px] font-black tracking-tight ${change.startsWith('+') ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'}`}>
-          {change}
-        </span>
-      </div>
-    </div>
-  </motion.div>
-)
 
 export function ProfileOverview() {
-  const [timeRange, setTimeRange] = useState("1M")
-
-  const typeStyles: Record<string, string> = {
-    Buy: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    Sell: "bg-rose-50 text-rose-700 border-rose-100",
-    Deposit: "bg-indigo-50 text-indigo-700 border-indigo-100",
-    Withdraw: "bg-orange-50 text-orange-700 border-orange-100",
-  }
-
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-12 pb-20">
-      
-      {/* 1. Header with Breathing Avatar */}
-      <motion.div variants={cardReveal} className="flex flex-col md:flex-row items-center md:items-start justify-between gap-8">
-        <div className="flex flex-col md:flex-row items-center gap-8 text-center md:text-left">
-          <div className="relative">
-            {/* Animated Ring */}
+    <div className="space-y-10">
+      {/* 1. PROFILE HEADER SECTION */}
+      <section className="flex flex-col md:flex-row items-end md:items-center justify-between gap-6">
+        <div className="flex items-center gap-8 group">
+          <div className="relative size-28 shrink-0">
+            {/* Spinning Dashed Borders from Design */}
             <motion.div 
               animate={{ rotate: 360 }}
-              transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-              className="absolute -inset-2 bg-gradient-to-tr from-pink-400 via-purple-400 to-indigo-400 rounded-full opacity-40 blur-sm" 
+              transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 rounded-full border-2 border-dashed border-indigo-500/30"
             />
-            <div className="relative w-32 h-32 rounded-full bg-white p-[3px] shadow-2xl">
-              <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Satoshi" alt="Avatar" className="w-full h-full rounded-full object-cover ring-2 ring-white" />
-              <motion.div 
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="absolute bottom-1 right-1 w-7 h-7 bg-emerald-500 border-4 border-white rounded-full shadow-md z-10" 
+            <motion.div 
+              animate={{ rotate: -360 }}
+              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 rounded-full border-2 border-dotted border-cyan-500/30 scale-110"
+            />
+            <div className="relative h-full w-full rounded-full overflow-hidden border-4 border-white shadow-[0_0_20px_rgba(79,70,229,0.3)]">
+              <img 
+                alt="User Avatar" 
+                className="h-full w-full object-cover" 
+                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" 
               />
             </div>
-          </div>
-          <div className="space-y-2">
-            <motion.h1 
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="text-5xl font-bold text-slate-900 tracking-tighter leading-tight"
-            >
-              Satoshi Nakamoto
-            </motion.h1>
-            <div className="flex flex-wrap justify-center md:justify-start items-center gap-4">
-              <span className="text-slate-400 font-semibold text-lg tracking-tight">@satoshi_n</span>
-              <span className="hidden md:block w-1.5 h-1.5 bg-indigo-100 rounded-full" />
-              <motion.div 
-                whileHover={{ scale: 1.05 }}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-50/50 text-indigo-600 border border-indigo-100 rounded-2xl text-sm font-mono font-bold cursor-pointer"
-              >
-                 <Wallet size={14} /> 0x12...4B9a
-              </motion.div>
+            <div className="absolute -bottom-1 -right-1 size-8 rounded-full bg-white shadow-lg flex items-center justify-center text-emerald-500 z-10">
+              <Shield size={18} fill="currentColor" fillOpacity={0.1} />
             </div>
           </div>
-        </div>
-        
-        <div className="flex gap-4 self-center">
-           <motion.button whileHover={{ y: -2 }} whileTap={{ scale: 0.95 }} className="flex items-center gap-2 px-6 py-3 rounded-[1.2rem] bg-white border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest shadow-sm hover:shadow-md transition-all">
-             <Edit3 size={14} /> Edit Profile
-           </motion.button>
-           <motion.button whileHover={{ y: -2 }} whileTap={{ scale: 0.95 }} className="flex items-center gap-2 px-6 py-3 rounded-[1.2rem] bg-slate-900 text-white font-bold text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 transition-all">
-             <Settings size={14} /> Settings
-           </motion.button>
-        </div>
-      </motion.div>
 
-      {/* 2. Main Bento Grid */}
-      <div className="grid lg:grid-cols-3 gap-8">
-        
-        {/* Chart Card */}
-        <motion.div variants={cardReveal} className="lg:col-span-2 bg-white/60 backdrop-blur-3xl border border-white rounded-[3rem] p-10 shadow-[0_30px_60px_rgba(0,0,0,0.02)] relative overflow-hidden group">
-          <ShimmerEffect />
-          <div className="relative z-20 flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em] mb-2">Portfolio Analytics</p>
-              <div className="flex items-baseline gap-4">
-                 <motion.span 
-                   key={timeRange}
-                   initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                   className="font-display text-6xl font-bold text-slate-900 tracking-tighter"
-                 >
-                   $125,843.50
-                 </motion.span>
-                 <div className="flex items-center gap-1 px-3 py-1 bg-emerald-50 border border-emerald-100 text-emerald-600 text-sm font-black rounded-xl">
-                    <ArrowUpRight size={16} strokeWidth={3} /> 5.21%
-                 </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
+              <h1 className="text-4xl font-black text-slate-900 tracking-tight group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-indigo-600 group-hover:to-cyan-500 transition-all duration-300">
+                nyra_whale.eth
+              </h1>
+              <span className="px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-600 text-xs font-bold uppercase tracking-wider border border-indigo-500/20">Pro</span>
+            </div>
+            <div className="flex items-center gap-6 text-sm font-medium text-slate-500">
+              <div className="flex items-center gap-2 hover:text-indigo-600 cursor-pointer transition-colors">
+                <Fingerprint size={16} />
+                <span className="font-mono">0x71C...399A</span>
+                <Copy size={14} className="opacity-50" />
+              </div>
+              <div className="flex items-center gap-2 text-emerald-500">
+                <div className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="font-bold">Privacy: High</span>
               </div>
             </div>
-            <div className="flex bg-slate-50 border border-slate-100 p-1.5 rounded-2xl backdrop-blur-sm">
-              {["1W", "1M", "1Y", "ALL"].map((range) => (
-                <button
-                  key={range}
-                  onClick={() => setTimeRange(range)}
-                  className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${
-                    timeRange === range ? "bg-white text-indigo-600 shadow-lg scale-105" : "text-slate-400 hover:text-slate-600"
-                  }`}
+          </div>
+        </div>
+        <button className="px-6 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 hover:border-indigo-500/50 hover:text-indigo-600 hover:shadow-lg hover:-translate-y-0.5 transition-all">
+          Edit Profile
+        </button>
+      </section>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* LEFT COLUMN: CHART & HOLDINGS */}
+        <div className="lg:col-span-8 space-y-8">
+          
+          {/* TOTAL NET WORTH CARD */}
+          <div className={`relative h-[450px] rounded-[2rem] overflow-hidden ${glassCard}`}>
+            {/* Grid Overlay */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(79,70,229,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(79,70,229,0.03)_1px,transparent_1px)] bg-[size:40px_40px]" />
+            
+            <div className="relative h-full flex flex-col items-center justify-center z-10">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="text-center z-20"
+              >
+                <p className="text-[11px] font-black text-slate-400 tracking-[0.3em] uppercase mb-1">Total Net Worth</p>
+                <h2 className="text-7xl font-black text-slate-900 tracking-tighter">
+                  $142,590<span className="text-3xl text-slate-300">.00</span>
+                </h2>
+                <div className="mt-4 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 text-sm font-bold border border-emerald-500/20">
+                  <TrendingUp size={16} /> +2.4% (24h)
+                </div>
+              </motion.div>
+
+              {/* Chart Overlay */}
+              <div className="absolute bottom-0 left-0 right-0 h-[250px] opacity-60">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <Area 
+                      type="monotone" 
+                      dataKey="val" 
+                      stroke="#6366f1" 
+                      strokeWidth={3} 
+                      fillOpacity={1} 
+                      fill="url(#colorVal)" 
+                      animationDuration={2500}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* PORTFOLIO HOLDINGS GRID */}
+          <div className="space-y-6">
+            <div className="flex items-center justify-between px-2">
+              <h3 className="text-xl font-bold text-slate-800">Portfolio Holdings</h3>
+              <button className="text-sm font-bold text-indigo-600 hover:text-indigo-400 transition-colors uppercase tracking-widest">Manage Assets</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {holdings.map((item, idx) => (
+                <motion.div 
+                  key={idx}
+                  whileHover={{ y: -8, scale: 1.02 }}
+                  className={`p-6 rounded-2xl relative overflow-hidden group cursor-pointer ${glassCard}`}
                 >
-                  {range}
-                </button>
+                  <div className="flex items-start justify-between mb-8">
+                    <div className="size-12 rounded-xl bg-slate-50 flex items-center justify-center shadow-inner group-hover:bg-indigo-50 transition-colors">
+                      {/* Using dynamic letters as placeholders for icons in design */}
+                      <span className="font-black text-slate-300 group-hover:text-indigo-400 text-xl">{item.name[0]}</span>
+                    </div>
+                    <span className={`px-2 py-1 rounded-lg text-xs font-bold ${item.change.startsWith('+') ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
+                      {item.change}
+                    </span>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{item.name}</h4>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{item.platform}</p>
+                  </div>
+                  <div className="mt-5 pt-5 border-t border-slate-100 flex items-end justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-300 font-black uppercase mb-1">Value</p>
+                      <p className="text-xl font-bold text-slate-900">{item.value}</p>
+                    </div>
+                    <div className="text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                      <p className="text-[10px] text-slate-300 font-black uppercase mb-1">PnL</p>
+                      <p className={`text-sm font-bold ${item.pnl.startsWith('+') ? 'text-emerald-500' : 'text-rose-500'}`}>{item.pnl}</p>
+                    </div>
+                  </div>
+                </motion.div>
               ))}
             </div>
           </div>
-          
-          <div className="h-72 w-full relative z-20">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.15} />
-                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#a855f7" />
-                    <stop offset="50%" stopColor="#6366f1" />
-                    <stop offset="100%" stopColor="#ec4899" />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="8 8" />
-                <Tooltip 
-                  contentStyle={{ 
-                    borderRadius: '20px', 
-                    border: 'none', 
-                    boxShadow: '0 20px 40px rgba(0,0,0,0.06)', 
-                    padding: '12px 20px',
-                    fontSize: '14px',
-                    fontWeight: '800'
-                  }} 
-                />
-                <XAxis dataKey="day" hide />
-                <Area 
-                  type="monotone" 
-                  dataKey="value" 
-                  stroke="url(#lineGradient)" 
-                  strokeWidth={5} 
-                  fill="url(#chartGradient)" 
-                  animationDuration={3000}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
+        </div>
 
-        {/* Holdings Card */}
-        <motion.div variants={cardReveal} className="bg-white/60 backdrop-blur-3xl border border-white rounded-[3rem] p-8 shadow-[0_30px_60px_rgba(0,0,0,0.02)] flex flex-col relative overflow-hidden group">
-          <div className="relative z-20 flex justify-between items-center mb-8">
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              Holdings <Sparkles size={16} className="text-indigo-400" />
-            </h2>
-            <button className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-400">View All</button>
+        {/* RIGHT COLUMN: ACTIVITY STREAM */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-xl font-bold text-slate-800">Activity Stream</h3>
+            <button className="size-8 rounded-full hover:bg-white flex items-center justify-center transition-all text-slate-400 hover:text-indigo-600">
+              <Settings2 size={18} />
+            </button>
           </div>
-          <div className="space-y-1 overflow-y-auto no-scrollbar flex-grow relative z-20">
-            {holdings.map((holding) => (
-              <HoldingItem key={holding.name} {...holding} />
-            ))}
+          
+          <div className={`${glassCard} rounded-[2.5rem] p-8 min-h-[700px] flex flex-col relative`}>
+            {/* The Timeline Line */}
+            <div className="absolute left-[2.45rem] md:left-1/2 top-10 bottom-20 w-0.5 bg-gradient-to-b from-transparent via-slate-200 to-transparent -translate-x-1/2" />
+            
+            <div className="space-y-10 relative">
+              <TimelineItem 
+                side="right" 
+                title="Collateral +" 
+                time="2m ago" 
+                desc="Increased ETH-PERP position" 
+                val="+ 5.00 ETH" 
+                status="success" 
+                icon={<ArrowUpRight size={18}/>} 
+              />
+              <TimelineItem 
+                side="left" 
+                title="Close Short" 
+                time="4h ago" 
+                desc="SOL-PERP Limit Order" 
+                val="$2,450.00" 
+                status="danger" 
+                icon={<ArrowDownLeft size={18}/>} 
+              />
+              <TimelineItem 
+                side="right" 
+                title="Swapping" 
+                time="Pending" 
+                desc="USDC to WBTC bridge" 
+                status="pending" 
+                icon={<RefreshCw size={18} className="animate-spin" />} 
+              />
+            </div>
+
+            <div className="mt-auto pt-8 text-center">
+              <button className="text-[11px] font-black text-indigo-500 uppercase tracking-[0.2em] hover:text-cyan-500 transition-colors">View Full History</button>
+            </div>
           </div>
-          <motion.button 
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="mt-8 w-full py-4 rounded-2xl bg-indigo-600 text-[11px] font-black uppercase tracking-[0.2em] text-white shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2"
-          >
-             + ADD ASSET
-          </motion.button>
-        </motion.div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TimelineItem({ side, title, time, desc, val, status, icon }: any) {
+  const isRight = side === 'right';
+  const colorClass = status === 'success' ? 'bg-emerald-50 text-emerald-500' : 
+                     status === 'danger' ? 'bg-rose-50 text-rose-500' : 
+                     'bg-indigo-50 text-indigo-500';
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      className={`relative flex items-center justify-between md:justify-normal group ${!isRight ? 'md:flex-row-reverse' : ''}`}
+    >
+      {/* Icon Node */}
+      <div className={`flex items-center justify-center size-10 rounded-full border border-white shadow-sm shrink-0 z-10 md:order-1 transition-transform group-hover:scale-110 ${colorClass} ${isRight ? 'md:translate-x-1/2' : 'md:-translate-x-1/2'}`}>
+        {icon}
       </div>
 
-      {/* 3. Staggered Activity Log Table */}
-      <motion.div variants={cardReveal} className="space-y-6">
-        <div className="flex justify-between items-center px-4">
-           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Recent Activity</h2>
-           <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-indigo-50 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-indigo-600 transition-all">
-              <Filter size={14} /> Refine Log
-           </button>
+      {/* Content Card */}
+      <div className={`w-[calc(100%-3.5rem)] md:w-[calc(50%-1.5rem)] p-4 rounded-xl bg-white border border-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer ${status === 'pending' ? 'bg-gradient-to-br from-white to-indigo-50/30' : ''}`}>
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-bold text-slate-800 text-sm">{title}</span>
+          {status === 'pending' ? (
+            <span className="text-[9px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-black uppercase">Pending</span>
+          ) : (
+            <span className="text-[10px] text-slate-400 font-bold">{time}</span>
+          )}
         </div>
-
-        <div className="bg-white/60 backdrop-blur-3xl border border-white rounded-[2.5rem] overflow-hidden shadow-[0_30px_100px_rgba(0,0,0,0.03)]">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead>
-                <tr className="bg-slate-50/50 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400 border-b border-slate-100">
-                  {["Date", "Type", "Asset", "Amount", "Price", "Status"].map((header) => (
-                    <th key={header} scope="col" className="px-8 py-7">{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {transactions.map((tx, index) => (
-                  <motion.tr 
-                    key={index} 
-                    variants={rowReveal}
-                    className="hover:bg-indigo-50/20 transition-all duration-300 group cursor-default"
-                  >
-                    <td className="px-8 py-6 text-slate-500 font-medium">{tx.date}</td>
-                    <td className="px-8 py-6">
-                      <span className={`inline-flex items-center px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-full border shadow-sm ${typeStyles[tx.type]}`}>
-                        {tx.type === 'Buy' || tx.type === 'Deposit' ? <ArrowDownLeft size={12} className="mr-1.5" /> : <ArrowUpRight size={12} className="mr-1.5" />}
-                        {tx.type}
-                      </span>
-                    </td>
-                    <td className="px-8 py-6 font-bold text-slate-900">{tx.asset}</td>
-                    <td className={`px-8 py-6 font-mono font-bold whitespace-nowrap text-[15px] ${tx.amount.startsWith('+') ? 'text-emerald-600' : 'text-slate-900'}`}>
-                      {tx.amount}
-                    </td>
-                    <td className="px-8 py-6 text-slate-400 font-mono text-xs">{tx.price}</td>
-                    <td className="px-8 py-6">
-                      <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white border border-slate-100 shadow-sm group-hover:border-indigo-100 transition-colors">
-                        <motion.span 
-                          animate={tx.status === 'Pending' ? { scale: [1, 1.3, 1] } : {}}
-                          transition={{ repeat: Infinity, duration: 2 }}
-                          className={`w-2 h-2 rounded-full ${tx.status === 'Completed' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : tx.status === 'Pending' ? 'bg-amber-400' : 'bg-rose-500'}`} 
-                        />
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${tx.status === 'Completed' ? 'text-emerald-600' : tx.status === 'Pending' ? 'text-amber-600' : 'text-rose-600'}`}>{tx.status}</span>
-                      </div>
-                    </td>
-                  </motion.tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </motion.div>
+        <p className="text-[11px] text-slate-500 mb-2">{desc}</p>
+        {val && <div className={`text-sm font-black ${status === 'success' ? 'text-emerald-500' : 'text-slate-900'}`}>{val}</div>}
+      </div>
     </motion.div>
   )
 }

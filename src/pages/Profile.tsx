@@ -1,49 +1,36 @@
+"use client"
 import { motion, useScroll, useSpring } from "framer-motion"
-import { Header } from "../components/Header/Header"
 import { ProfileOverview } from "../components/Profile/ProfileOverview"
-
-const OutstandingBackground = () => (
-  <>
-    <div 
-      className="fixed inset-0 -z-20"
-      style={{
-        backgroundColor: '#F8F7FF',
-        backgroundImage: `
-          radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
-          radial-gradient(at 100% 0%, rgba(168, 85, 247, 0.15) 0px, transparent 50%),
-          radial-gradient(at 100% 100%, rgba(236, 72, 153, 0.1) 0px, transparent 50%)
-        `,
-        backgroundAttachment: 'fixed'
-      }}
-    />
-    <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
-      <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-purple-400/20 blur-[120px] animate-pulse" />
-      <div className="absolute bottom-[-10%] left-[-5%] w-[600px] h-[600px] rounded-full bg-indigo-400/20 blur-[120px]" />
-    </div>
-  </>
-);
+import { ProfessionalBackground } from "../components/UI/ProfileBackground";
+import { Header } from "../components/Header/Header"
 
 export default function ProfilePage() {
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, { stiffness: 100, damping: 30 });
 
   return (
-    <div className="min-h-screen font-sans selection:bg-indigo-100 relative text-slate-900">
-      <motion.div className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 origin-left z-[200]" style={{ scaleX }} />
-      <OutstandingBackground />
-      <div className="relative z-10 flex flex-col min-h-screen">
-        <Header />
-        <main className="flex-grow pt-40 pb-20 px-6">
-          <div className="max-w-7xl mx-auto">
-            <ProfileOverview />
-          </div>
-        </main>
-        <footer className="w-full py-10 border-t border-indigo-50 bg-white/40 backdrop-blur-md">
-          <div className="max-w-7xl mx-auto text-center text-slate-400 text-[10px] uppercase tracking-[0.2em] font-bold">
-            © 2025 Nyra Protocol • Ultra Elite Private Perpetual Trading
-          </div>
-        </footer>
-      </div>
+    <div className="min-h-screen selection:bg-indigo-100 relative text-slate-900 bg-[#F8F9FD] font-sans">
+      {/* Scroll Progress Bar */}
+      <motion.div className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-600 to-cyan-500 origin-left z-[100]" style={{ scaleX }} />
+      
+      <ProfessionalBackground />
+      <Header />
+      
+      <main className="relative z-10 max-w-[1400px] mx-auto pt-32 pb-20 px-6 lg:px-10">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <ProfileOverview />
+        </motion.div>
+      </main>
+
+      <footer className="relative z-10 py-12 border-t border-slate-200/50">
+        <div className="max-w-7xl mx-auto text-center text-[10px] font-black text-slate-300 uppercase tracking-[0.4em]">
+          © 2025 Nyra Protocol • Decentralized Trading Dashboard
+        </div>
+      </footer>
     </div>
   )
 }
