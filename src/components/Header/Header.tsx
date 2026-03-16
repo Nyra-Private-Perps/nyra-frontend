@@ -1,106 +1,139 @@
-import { useAccount, useDisconnect } from "wagmi"
-import { ConnectWalletModal } from "../Wallet/ConnectWalletModal"
-import { useState, useEffect } from "react"
-import { AnimatePresence, motion } from "framer-motion"
-import { Link } from "react-router-dom"
+"use client";
+import { type FC } from "react";
+import { Shield, Link2, ArrowDownToLine, Diamond, LayoutGrid, Power, Wallet, Zap } from "lucide-react";
+import { Badge } from "@/components/ui";
+import { C, type PageId } from "@/lib/tokens";
+import { WalletState } from "../../App";
+import { resetWalletConnect } from "@/lib/walletController";
+import nyraLogo from '../../../public/3.jpg.jpeg';
 
-function truncateAddress(address: string) {
-  if (!address) return ""
-  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
+interface HeaderProps {
+  page: PageId;
+  setPage: (id: PageId) => void;
+  wallet: WalletState;
+  setWallet: (w: any) => void;
 }
 
-const WalletConnectButton = () => {
-  const { address, isConnected } = useAccount()
-  const { disconnect } = useDisconnect()
-  const [isModalOpen, setIsModalOpen] = useState(false)
+const NAV = [
+  { id: "deposit", label: "Deposit", icon: ArrowDownToLine },
+  { id: "proxy", label: "Proxy Safes", icon: Shield },
+  { id: "connect", label: "Connect", icon: Link2 },
+  { id: "trade", label: "Trade", icon: Diamond },
+  { id: "portfolio", label: "Portfolio", icon: LayoutGrid },
+] as const;
 
-  if (isConnected && address) {
-    return (
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 bg-white/50 px-4 py-2 rounded-full border border-gray-100 shadow-sm">
-          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-          <span className="text-sm text-gray-700 font-semibold">{truncateAddress(address)}</span>
+const Header: FC<HeaderProps> = ({ page, setPage, wallet, setWallet }) => {
+  
+  const connectMetaMask = async () => {
+    if (!window.ethereum) return alert("Install MetaMask");
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    setWallet((prev: any) => ({ ...prev, eoa: accounts[0], isConnected: true }));
+  };
+
+  const disconnect = () => {
+    localStorage.removeItem("nyra_active_safe");
+    sessionStorage.removeItem("nyra_stealth_key");
+    setWallet({
+      isConnected: false,
+      isHLConnected: false,
+      eoa: null,
+      proxySafe: null,
+      stealthAccount: null,
+      proxies: [],
+    });
+  };
+
+  return (
+    <header
+      className="flex items-center justify-between sticky top-0 z-50 glass"
+      style={{ padding: "12px 28px", borderBottom: `1px solid ${C.primary}0C` }}
+    >
+      <div className="flex items-center gap-7">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setPage("trade")}>
+        {/* <div
+  className="w-11 h-11 rounded-full flex items-center justify-center overflow-hidden"
+  style={{ 
+    boxShadow: `0 0 15px ${C.primary}25` 
+  }}
+>
+  <img 
+    src={nyraLogo} 
+    alt="NYRA Logo" 
+    className="w-full h-full object-cover rounded-full" 
+  />
+</div> */}
+          <span className="font-head font-extrabold text-[17px] tracking-[4px] uppercase" style={{ color: C.accent }}>
+            NYRA
+          </span>
         </div>
-        <button
-          onClick={() => disconnect()}
-          className="bg-black text-white px-5 py-2 rounded-full text-sm font-bold hover:bg-gray-800 transition-all duration-300 shadow-lg active:scale-95"
-        >
-          Disconnect
-        </button>
+
+        {/* Navigation */}
+        {wallet.isConnected && (
+          <nav className="flex gap-0.5">
+            {NAV.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => setPage(n.id)}
+                className="flex items-center gap-[7px] rounded-[9px] font-body text-[13px] cursor-pointer transition-all duration-200"
+                style={{
+                  padding: "8px 16px",
+                  background: page === n.id ? `${C.core}CC` : "transparent",
+                  color: page === n.id ? C.accent : C.muted,
+                }}
+              >
+                <n.icon size={15} />
+                {n.label}
+              </button>
+            ))}
+          </nav>
+        )}
       </div>
-    )
-  }
 
-  return (
-    <>
-      <button
-        onClick={() => setIsModalOpen(true)}
-        className="bg-black text-white px-6 py-2.5 rounded-full text-sm font-bold hover:bg-indigo-600 transition-all duration-300 shadow-xl shadow-indigo-100 active:scale-95"
-      >
-        Connect Wallet
-      </button>
-      <AnimatePresence>
-        {isModalOpen && <ConnectWalletModal onClose={() => setIsModalOpen(false)} />}
-      </AnimatePresence>
-    </>
-  )
-}
+      <div className="flex items-center gap-4">
+        {!wallet.isConnected ? (
+          <button 
+            onClick={connectMetaMask}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all"
+            style={{ background: C.primary, color: C.void }}
+          >
+            <Wallet size={16} /> Connect Wallet
+          </button>
+        ) : (
+          <>
+            <div className="flex flex-col items-end gap-1 mr-2">
+            <Badge variant={wallet.isHLConnected ? "success" : "secondary"} pulse={wallet.isHLConnected}>
+  {wallet.isHLConnected ? "TERMINAL LIVE" : "TERMINAL OFFLINE"}
+</Badge>
+              <button 
+                onClick={() => confirm("Reset all sessions?") && resetWalletConnect()}
+                className="text-[9px] text-muted hover:text-red-400 uppercase tracking-tighter"
+              >
+                Reset Connection
+              </button>
+            </div>
 
-export function Header() {
-  const { isConnected } = useAccount()
-  const [isScrolled, setIsScrolled] = useState(false)
+            <div className="flex items-center gap-3 pl-4 border-l border-white/10">
+              <div className="flex flex-col items-end">
+                <span className="font-mono text-[9px] text-muted tracking-widest uppercase">
+                  {wallet.proxySafe ? "Active Proxy" : "EOA Linked"}
+                </span>
+                <span className="font-mono text-[11px] text-white">
+                  {wallet.proxySafe 
+                    ? `${wallet.proxySafe.slice(0, 6)}...${wallet.proxySafe.slice(-4)}`
+                    : `${wallet.eoa?.slice(0, 6)}...${wallet.eoa?.slice(-4)}`
+                  }
+                </span>
+              </div>
+              <button onClick={disconnect} className="p-2 text-muted hover:text-red-400 transition-colors">
+                <Power size={18} />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </header>
+  );
+};
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20)
-    }
-    window.addEventListener("scroll", handleScroll)
-    return () => window.removeEventListener("scroll", handleScroll)
-  }, [])
-
-  return (
-    <div className="fixed top-0 left-0 right-0 z-[100] px-4 py-6 pointer-events-none">
-      <motion.header 
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className={`
-          mx-auto max-w-7xl pointer-events-auto
-          flex items-center justify-between 
-          bg-white/70 backdrop-blur-xl 
-          px-10 py-4 rounded-[2.5rem] 
-          border border-white/80
-          transition-all duration-500
-          ${isScrolled ? 'shadow-[0_20px_50px_rgba(0,0,0,0.1)] py-3' : 'shadow-[0_10px_30px_rgba(0,0,0,0.05)]'}
-        `}
-      >
-        <nav className="flex items-center justify-between w-full">
-          {/* Logo Section - Increased Size */}
-          <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
-            <img 
-               src="/logo.png" 
-               alt="Nyra Logo" 
-               className="h-14 w-auto object-contain" // Changed from h-10 to h-14
-            />
-          </Link>
-
-          {/* Navigation Links */}
-          <div className="hidden md:flex items-center gap-12">
-            <Link to="/vaults" className="text-gray-500 hover:text-black transition-colors duration-300 text-sm font-bold tracking-widest uppercase">
-              Vaults
-            </Link>
-            <Link to="/faucet" className="text-gray-500 hover:text-black transition-colors duration-300 text-sm font-bold tracking-widest uppercase">
-              Faucet
-            </Link>
-            {isConnected && (
-              <Link to="/profile" className="text-gray-500 hover:text-black transition-colors duration-300 text-sm font-bold tracking-widest uppercase">
-                Profile
-              </Link>
-            )}
-          </div>
-
-          <WalletConnectButton />
-        </nav>
-      </motion.header>
-    </div>
-  )
-}
+export default Header;

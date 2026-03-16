@@ -2,9 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>nyra-frontend</title>
+    <title>Nyra — Private Perpetual Trading</title>
+    <script>
+      window.global = window;
+      window.process = { env: { NODE_ENV: 'development' }, version: '', nextTick: (cb) => setTimeout(cb, 0), browser: true };
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/buffer/6.0.3/buffer.min.js"></script>
+    <script>
+      // Ensure Buffer is set even if the script loads slightly after the inline script
+      (function() {
+        var checkBuffer = setInterval(function() {
+          if (window.buffer) {
+            window.Buffer = window.buffer.Buffer;
+            clearInterval(checkBuffer);
+          }
+        }, 10);
+      })();
+    </script>
+    <meta name="description" content="Fast Perps. Private Execution. Trade perpetual futures with zero position exposure." />
   </head>
   <body>
     <div id="root"></div>
