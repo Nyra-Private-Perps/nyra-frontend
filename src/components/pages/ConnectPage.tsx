@@ -1,15 +1,30 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
-import { Link2, Check, RefreshCw, Zap, AlertCircle, ChevronDown } from "lucide-react";
+import { useState } from "react";
+import { Link2, Check, RefreshCw, AlertCircle } from "lucide-react";
 import { GlowCard, Badge, Btn, Input, SignatureViz } from "@/components/ui";
 import { C } from "@/lib/tokens";
-import { getWeb3Wallet } from "@/lib/walletController";
+import { getAddress } from "viem";
+import { getWeb3Wallet, disconnectAllSessions } from "@/lib/walletController";
 import { WalletState } from "../../App";
-import { getAddress } from "ethers";
 
-// Arbitrum Sepolia for HL Testnet
-const HL_TESTNET_CHAIN = "eip155:421614"; 
+// ─────────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────────
+const CHAIN_ID = 421614; // Arbitrum Sepolia
 
+// ─────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────
+type Step = 0 | 1 | 2 | 3 | 4;
+// 0 → select proxy
+// 1 → paste WC URI
+// 2 → connecting (pairing in progress)
+// 3 → success
+// 4 → error
+
+// ─────────────────────────────────────────────────────────────
+// COMPONENT
+// ─────────────────────────────────────────────────────────────
 export default function ConnectPage({
   wallet,
   setWallet,
@@ -17,154 +32,182 @@ export default function ConnectPage({
   wallet: WalletState;
   setWallet: (fn: (prev: WalletState) => WalletState) => void;
 }) {
-  const [step, setStep] = useState(0); // 0: select proxy, 1: input uri, 2: connecting, 3: success, 4: error
+  const [step, setStep] = useState<Step>(0);
   const [uri, setUri] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [wcInstance, setWcInstance] = useState<any>(null);
 
+  // ── Select a proxy from the list ──
+  // Syncs BOTH safe address AND stealth key to sessionStorage so that
+  // walletController can find the right key when signing.
+  const selectProxy = (proxy: any) => {
+    setWallet((prev) => ({ ...prev, proxySafe: proxy.safe }));
+    sessionStorage.setItem("nyra_safe_address", proxy.safe);
 
-// ConnectPage.tsx -> handleConnect
-// Inside ConnectPage.tsx
+    // Sync stealth key so walletController.getStoredKeys() works immediately
+    const stealthKey = localStorage.getItem("nyra_stealth_key") ?? "";
+    if (stealthKey) sessionStorage.setItem("nyra_stealth_key", stealthKey);
 
-// ConnectPage.tsx -> handleConnect
-// ConnectPage.tsx -> handleConnect
+    // Sync stealth address so session_proposal can expose it to HL
+    const stealthAddress = localStorage.getItem("nyra_stealth_address") ?? "";
+    if (stealthAddress) sessionStorage.setItem("nyra_stealth_address", stealthAddress);
+  };
 
-const handleConnect = async () => {
-  if (!uri || !uri.includes("wc:")) return;
-  setLoading(true);
-  setErrorMsg(null);
+  // ── WalletConnect pairing + session approval ──
+  const handleConnect = async () => {
+    const trimmed = uri.trim();
+    if (!trimmed || !trimmed.startsWith("wc:")) return;
 
-  try {
-    const wc = await getWeb3Wallet();
+    setLoading(true);
+    setStep(2); // show "connecting" state immediately
 
-    // 1. Cleanup old pairings
-    const pairings = wc.core.pairing.getPairings();
-    for (const p of pairings) {
-      await wc.core.pairing.disconnect({ topic: p.topic }).catch(() => {});
-    }
+    try {
+      console.log("[Nyra] Step 1: disconnecting old sessions...");
+      await disconnectAllSessions();
 
-    const handshakePromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Handshake timeout")), 40000);
+      console.log("[Nyra] Step 2: getting fresh WC wallet...");
+      const wc = await getWeb3Wallet();
 
+      console.log("[Nyra] Step 3: wallet ready, registering session_proposal listener...");
       wc.on("session_proposal", async (proposal: any) => {
-        clearTimeout(timeout);
+        console.log("[Nyra] session_proposal received!", proposal.id);
         try {
-          console.log("🔔 Received session proposal for Safe:", wallet.proxySafe);
-          
-          // CRITICAL: Identify as the SAFE ADDRESS, not the stealth address
-          const safeAddress = getAddress(wallet.proxySafe!);
-          
-          if (!safeAddress) {
-             throw new Error("No active Proxy Safe selected");
+          // ── What address to expose to HL ──
+          // personal_sign and eth_signTypedData both do ecrecover off-chain.
+          // ecrecover returns the EOA that signed — the STEALTH address, not the Safe.
+          // If we expose the Safe address, HL's ecrecover check returns stealthAddress
+          // which doesn't match safeAddress → 500 Internal Server Error.
+          //
+          // Fix: expose the STEALTH address (EOA owner) for the session.
+          // eth_sendTransaction still goes through the Safe via protocolKit internally.
+          //
+          // Priority: wallet state → sessionStorage → localStorage
+          const stealthAddress =
+            wallet.stealthAddress ??
+            sessionStorage.getItem("nyra_stealth_address") ??
+            localStorage.getItem("nyra_stealth_address");
+
+          if (!stealthAddress) {
+            throw new Error("No stealth address found — create a proxy first");
           }
 
-          const required = proposal.params.requiredNamespaces?.eip155 || {};
-          const optional = proposal.params.optionalNamespaces?.eip155 || {};
+          const signerAddress = getAddress(stealthAddress);
 
-          const supportedMethods = [
-            'eth_sendTransaction',
-            'personal_sign',
-            'eth_signTypedData',
-            'eth_signTypedData_v4',
-            'eth_sign',
-          ];
+          const required = proposal.params.requiredNamespaces?.eip155 ?? {};
+          const methods =
+            required.methods?.length > 0
+              ? required.methods
+              : [
+                  "eth_sendTransaction",
+                  "eth_sign",
+                  "personal_sign",
+                  "eth_signTypedData",
+                  "eth_signTypedData_v4",
+                ];
 
-          const mergedMethods = Array.from(new Set([
-            ...(required.methods || []),
-            ...(optional.methods || []),
-            ...supportedMethods
-          ]));
-
-          const namespaces = {
-            eip155: {
-              // WE REPORT THE SAFE ADDRESS HERE
-              accounts: [`eip155:421614:${safeAddress}`], 
-              methods: mergedMethods,
-              events: ['accountsChanged', 'chainChanged'],
-              chains: [`eip155:421614`],
+          await wc.approveSession({
+            id: proposal.id,
+            namespaces: {
+              eip155: {
+                accounts: [`eip155:${CHAIN_ID}:${signerAddress}`], // stealth EOA, not Safe
+                methods,
+                events: ["accountsChanged", "chainChanged"],
+                chains: [`eip155:${CHAIN_ID}`],
+              },
             },
-          };
+          });
 
-          await wc.approveSession({ id: proposal.id, namespaces });
-          console.log("✅ Session approved for Safe:", safeAddress);
-          
-          resolve(true);
-        } catch (e) { reject(e); }
+          setWallet((prev) => ({ ...prev, isHLConnected: true }));
+          setStep(3);
+        } catch (e: any) {
+          console.error("[Nyra] Session approval failed:", e);
+          setErrorMsg(e.message ?? "Session approval failed");
+          setStep(4);
+        }
       });
-    });
 
-    await wc.core.pairing.pair({ uri: uri.trim() });
-    setStep(2); 
+      console.log("[Nyra] Step 4: calling pair() with URI:", trimmed.slice(0, 40) + "...");
+      // This triggers the session_proposal event from the dapp
+      await wc.core.pairing.pair({ uri: trimmed });
+      console.log("[Nyra] Step 5: pair() resolved — waiting for session_proposal from HL...");
+    } catch (err: any) {
+      console.error("[Nyra] Pairing failed:", err);
+      setErrorMsg(err.message ?? "Pairing failed");
+      setStep(4);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    await handshakePromise;
-    setWallet(prev => ({ ...prev, isHLConnected: true }));
-    setStep(3); 
-
-  } catch (err: any) {
-    setErrorMsg(err.message);
-    setStep(4);
-  } finally {
-    setLoading(false);
-  }
-};
   const reset = () => {
     setStep(0);
     setUri("");
     setErrorMsg(null);
   };
 
+  const proxies: any[] = wallet.proxies ?? [];
+
+  // ─────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────
   return (
     <div className="max-w-[540px] mx-auto anim-fade-up">
+
+      {/* ── Step 0: Select proxy ── */}
       {step === 0 && (
         <GlowCard>
           <div className="mb-6">
             <h3 className="font-head text-xl font-bold mb-1">Target Proxy</h3>
-            <p className="text-[11px] text-muted uppercase tracking-wider">Select the safe to link with Hyperliquid</p>
+            <p className="text-[11px] text-muted uppercase tracking-wider">
+              Select the Safe to link with Hyperliquid
+            </p>
           </div>
+
           <div className="flex flex-col gap-3 mb-7">
-            {wallet.proxies.length === 0 ? (
+            {proxies.length === 0 ? (
               <div className="text-center py-12 text-muted text-sm border border-dashed border-white/10 rounded-2xl">
                 No proxies available — create one first
               </div>
             ) : (
-              wallet.proxies.map((p: any) => (
-                <div
-                  key={p.safe}
-                  onClick={() => {
-                    setWallet((prev: any) => ({ ...prev, proxySafe: p.safe }));
-                    sessionStorage.setItem("nyra_safe_address", p.safe); // Keep storage in sync
-                  }}
-                  className="p-4 rounded-xl border cursor-pointer transition-all hover:bg-white/[0.02]"
-                  style={{
-                    background: wallet.proxySafe === p.safe ? `${C.primary}12` : "transparent",
-                    borderColor: wallet.proxySafe === p.safe ? C.accent : `${C.primary}20`,
-                  }}
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="font-body text-sm font-semibold text-white">
-                      Proxy Safe #{p.num}
+              proxies.map((p) => {
+                const isActive = wallet.proxySafe === p.safe;
+                return (
+                  <div
+                    key={p.safe}
+                    onClick={() => selectProxy(p)}
+                    className="p-4 rounded-xl border cursor-pointer transition-all hover:bg-white/[0.02]"
+                    style={{
+                      background: isActive ? `${C.primary}12` : "transparent",
+                      borderColor: isActive ? C.accent : `${C.primary}20`,
+                    }}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="font-body text-sm font-semibold text-white">
+                        Proxy Safe #{p.num}
+                      </div>
+                      {isActive && <Badge variant="success">Selected</Badge>}
                     </div>
-                    {wallet.proxySafe === p.safe && <Badge variant="success">Active</Badge>}
+                    <div className="font-mono text-[10px] text-muted mt-1 break-all opacity-60">
+                      {p.safe}
+                    </div>
                   </div>
-                  <div className="font-mono text-[10px] text-muted mt-1 break-all opacity-60">
-                    {p.safe}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
+
           <Btn
             variant="primary"
             full
             onClick={() => setStep(1)}
-            disabled={!wallet.proxySafe || loading}
+            disabled={!wallet.proxySafe}
           >
             Confirm Proxy & Continue
           </Btn>
         </GlowCard>
       )}
 
+      {/* ── Step 1: Paste WC URI ── */}
       {step === 1 && (
         <GlowCard className="text-center">
           <div className="mb-8">
@@ -173,30 +216,37 @@ const handleConnect = async () => {
             </div>
             <h3 className="font-head text-xl font-bold mb-2">Connect Hyperliquid</h3>
             <p className="text-xs text-muted leading-relaxed px-6">
-              Paste the WalletConnect URI from Hyperliquid "Connect Wallet" menu.
+              Open Hyperliquid → Connect Wallet → WalletConnect → copy the URI and paste it below.
             </p>
           </div>
+
           <Input
             placeholder="wc:abc123..."
             value={uri}
             onChange={(val) => setUri(val)}
             mono
           />
+
           <Btn
             variant="primary"
             full
             onClick={handleConnect}
-            disabled={loading || !uri.trim()}
+            disabled={loading || !uri.trim().startsWith("wc:")}
           >
-            {loading ? <RefreshCw className="anim-spin mr-2" size={15} /> : null}
+            {loading && <RefreshCw className="anim-spin mr-2" size={15} />}
             Establish Handshake
           </Btn>
-          <button onClick={() => setStep(0)} className="mt-4 text-[10px] font-mono text-muted hover:text-white uppercase tracking-widest">
+
+          <button
+            onClick={() => setStep(0)}
+            className="mt-4 text-[10px] font-mono text-muted hover:text-white uppercase tracking-widest"
+          >
             ← Change Selected Proxy
           </button>
         </GlowCard>
       )}
 
+      {/* ── Step 2: Connecting (pairing in progress) ── */}
       {step === 2 && (
         <GlowCard className="text-center py-10">
           <div className="mb-8">
@@ -204,7 +254,7 @@ const handleConnect = async () => {
           </div>
           <h3 className="font-head text-xl font-bold mb-3">Initializing Session</h3>
           <p className="text-xs text-muted mb-7 px-8 leading-relaxed">
-            Establishing encrypted tunnel between your Stealth Proxy and Hyperliquid Testnet nodes...
+            Establishing encrypted tunnel between your Stealth Proxy and Hyperliquid...
           </p>
           <div className="flex items-center justify-center gap-2 font-mono text-[10px] text-accent animate-pulse uppercase tracking-[2px]">
             <span className="w-1.5 h-1.5 bg-accent rounded-full" />
@@ -213,21 +263,26 @@ const handleConnect = async () => {
         </GlowCard>
       )}
 
+      {/* ── Step 3: Success ── */}
       {step === 3 && (
         <GlowCard glow={C.success} className="text-center py-10">
           <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-success/20">
             <Check size={40} className="text-success" />
           </div>
           <h3 className="font-head text-2xl font-bold mb-3">Tunnel Established</h3>
-          <p className="text-sm text-muted mb-8 px-10 leading-relaxed">
-            Your Proxy Safe is now securely linked. You can now execute private trades on Hyperliquid.
+          <p className="text-sm text-muted mb-2 px-10 leading-relaxed">
+            Your Proxy Safe is now securely linked. You can execute private trades on Hyperliquid.
           </p>
+          <div className="font-mono text-[10px] text-muted/60 mb-8 break-all px-6">
+            {wallet.proxySafe}
+          </div>
           <Btn variant="primary" full onClick={reset}>
-            Enter Trading Terminal
+            Connect Another / Done
           </Btn>
         </GlowCard>
       )}
 
+      {/* ── Step 4: Error ── */}
       {step === 4 && (
         <GlowCard className="text-center border-red-500/20">
           <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-red-500/20">
@@ -236,7 +291,7 @@ const handleConnect = async () => {
           <h3 className="font-head text-xl font-bold mb-2 text-red-200">Handshake Failed</h3>
           <p className="text-xs text-muted mb-8 px-4 leading-relaxed">{errorMsg}</p>
           <div className="flex gap-3">
-            <Btn variant="outline" full onClick={() => setStep(1)}>
+            <Btn variant="outline" full onClick={() => { setStep(1); setErrorMsg(null); }}>
               Retry
             </Btn>
             <Btn variant="ghost" full onClick={reset}>
