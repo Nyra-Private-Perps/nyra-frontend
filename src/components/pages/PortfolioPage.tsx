@@ -22,12 +22,12 @@ const PortfolioPage: FC<PortfolioProps> = ({ wallet }) => {
 
   useEffect(() => {
     const loadPortfolio = async () => {
-      if (!wallet.proxySafe) return;
+      if (!wallet.stealthAddress) return;
       setLoading(true);
       try {
         // Fetch Metadata (for coin names/decimals) and User State in parallel
         const [clearinghouse, metadata] = await Promise.all([
-          fetchHL("clearinghouseState", { user: wallet.proxySafe }),
+          fetchHL("clearinghouseState", { user: wallet.stealthAddress }),
           fetchHL("meta")
         ]);
 
@@ -41,14 +41,14 @@ const PortfolioPage: FC<PortfolioProps> = ({ wallet }) => {
     };
 
     loadPortfolio();
-  }, [wallet.proxySafe]);
+  }, [wallet.stealthAddress]);
 
-  if (!wallet.proxySafe) {
+  if (!wallet.stealthAddress) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <Lock size={40} className="text-muted mb-4 opacity-20" />
-        <h3 className="text-xl font-bold">Proxy Safe Required</h3>
-        <p className="text-muted">Create a Proxy Safe to view your private portfolio.</p>
+        <h3 className="text-xl font-bold">Steaalth Address Required</h3>
+        <p className="text-muted">Create a Steaalth Address to view your private portfolio.</p>
       </div>
     );
   }

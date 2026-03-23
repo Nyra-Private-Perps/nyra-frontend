@@ -5,88 +5,84 @@ import { C, type PageId } from "@/lib/tokens";
 import { getWeb3Wallet, onPendingRequest, resolveRequest } from "@/lib/walletController";
 import Header from "@/components/header/Header";
 
-// Pages
-import DepositPage from "@/components/pages/DepositPage";
+import DepositPage    from "@/components/pages/DepositPage";
 import CreateProxyPage from "@/components/pages/CreateProxyPage";
-import ConnectPage from "@/components/pages/ConnectPage";
-import TradePage from "@/components/pages/TradePage";
-import PortfolioPage from "@/components/pages/PortfolioPage";
+import ConnectPage    from "@/components/pages/ConnectPage";
+import TradePage      from "@/components/pages/TradePage";
+import PortfolioPage  from "@/components/pages/PortfolioPage";
 import { Zap } from "lucide-react";
+import { getStoredEOA } from "./lib/hyperStealth";
 
 const PAGE_COMPONENTS: Record<PageId, FC<any>> = {
-  deposit: DepositPage,
-  proxy: CreateProxyPage,
-  connect: ConnectPage,
-  trade: TradePage,
+  deposit:   DepositPage,
+  proxy:     CreateProxyPage,
+  connect:   ConnectPage,
+  trade:     TradePage,
   portfolio: PortfolioPage,
 };
 
 export interface WalletState {
-  isConnected: boolean;
-  isHLConnected: boolean;
-  eoa: string | null;
-  proxySafe: string | null;
-  stealthAccount: string | null;
+  isConnected:    boolean;
+  isHLConnected:  boolean;
+  eoa:            string | null;
+  // The currently active stealth address (used for WalletConnect session)
+  activeProxy:    string | null;
+  // Convenience alias — same value as activeProxy, kept for signing handlers
   stealthAddress: string | null;
-  proxies: any[];
+  proxies:        any[];
 }
 
 export default function App() {
   const [page, setPage] = useState<PageId>("proxy");
   const [wallet, setWallet] = useState<WalletState>({
-    isConnected: false,
-    isHLConnected: false,
-    eoa: null,
-    proxySafe: null,
-    stealthAccount: null,
+    isConnected:    false,
+    isHLConnected:  false,
+    eoa:            null,
+    activeProxy:    null,
     stealthAddress: null,
-    proxies: [],
+    proxies:        [],
   });
   const [request, setRequest] = useState<any>(null);
 
-  // 1. Subscribe to WalletController pub/sub — modal appears when a signing
-  //    request comes in from Hyperliquid via WalletConnect.
+  // 1. Subscribe to WalletController pub/sub — modal appears on signing requests
   useEffect(() => {
     const unsub = onPendingRequest((req) => setRequest(req));
     return unsub;
   }, []);
 
-  // 2. Boot the WalletConnect engine once on mount so the session_request
-  //    listener is registered before the user connects to any dapp.
-  //    IMPORTANT: this must run before ConnectPage calls getWeb3Wallet(),
-  //    otherwise the singleton is created without the listener.
+  // 2. Boot WalletConnect engine on mount — registers session_request listener
+  //    before the user connects to any dapp.
   useEffect(() => {
     getWeb3Wallet()
       .then(() => console.log("[Nyra] WalletConnect engine online"))
       .catch((e) => console.error("[Nyra] WalletConnect init failed:", e));
   }, []);
 
-  // 3. Rehydrate wallet state from localStorage on first load so the user
-  //    doesn't have to re-create a proxy after a page refresh.
+  // 3. Rehydrate wallet state from localStorage on first load
   useEffect(() => {
-    const activeSafe  = localStorage.getItem("nyra_active_safe");
-    const stealthKey  = localStorage.getItem("nyra_stealth_key");
-    const proxiesRaw  = localStorage.getItem("nyra_proxies");
+    const activeAddress = localStorage.getItem("nyra_active_stealth");
+    const stealthKey    = localStorage.getItem("nyra_stealth_key");
+    const proxiesRaw    = localStorage.getItem("nyra_proxies");
 
-    if (!activeSafe || !stealthKey) return; // nothing saved yet
+    if (!activeAddress || !stealthKey) return;
 
     const proxies = proxiesRaw ? JSON.parse(proxiesRaw) : [];
 
-    // Mirror back into sessionStorage so walletController.getStoredKeys() works
-    sessionStorage.setItem("nyra_safe_address", activeSafe);
-    sessionStorage.setItem("nyra_stealth_key", stealthKey);
+    // Mirror into sessionStorage so walletController.getStoredKeys() works
+    sessionStorage.setItem("nyra_stealth_address", activeAddress);
+    sessionStorage.setItem("nyra_stealth_key",     stealthKey);
 
     setWallet((prev) => ({
       ...prev,
-      isConnected:   true,
-      proxySafe:     activeSafe,
-      stealthAccount: stealthKey,
+      eoa: getStoredEOA(),
+      isConnected:    true,
+      activeProxy:    activeAddress,
+      stealthAddress: activeAddress,
       proxies,
     }));
   }, []);
 
-  // 4. Silence the WalletConnect "No matching key" noise — these are benign
-  //    internal errors that fire when a pairing expires.
+  // 4. Silence benign WalletConnect "No matching key" noise
   useEffect(() => {
     const handleRejection = (event: PromiseRejectionEvent) => {
       if (event.reason?.message?.includes("No matching key")) {
@@ -99,8 +95,6 @@ export default function App() {
 
   const PageComponent = PAGE_COMPONENTS[page];
 
-  // Parse the signing payload sent by Hyperliquid for human-readable display.
-  // HL puts the typed data JSON at params[1]; simpler requests put it at params[0].
   const getDisplayData = () => {
     if (!request) return null;
     try {
@@ -116,33 +110,26 @@ export default function App() {
     <div className="min-h-screen relative" style={{ background: C.void, color: C.white }}>
       <ParticleField />
 
-      <Header
-        page={page}
-        setPage={setPage}
-        wallet={wallet}
-        setWallet={setWallet}
-      />
+      <Header page={page} setPage={setPage} wallet={wallet} setWallet={setWallet} />
 
       <main
         className="relative z-[1]"
         style={{ padding: "28px 28px 60px", maxWidth: 1280, margin: "0 auto" }}
       >
         {!wallet.isConnected ? (
-          // ── Landing: user hasn't created a proxy yet ──
           <div className="flex flex-col items-center justify-center py-40 text-center anim-fade-up">
             <h2 className="text-2xl font-head font-bold mb-4">Initialize Terminal</h2>
             <p className="text-muted mb-8 max-w-sm">
-              Connect your wallet to derive your private stealth proxy and access Hyperliquid.
+              Connect your wallet to derive a private stealth address and access Hyperliquid.
             </p>
             <button
-              onClick={() => setPage("proxy")}  // take them to the proxy creation page
+              onClick={() => setPage("proxy")}
               className="px-8 py-3 bg-primary rounded-full font-bold"
             >
-              Create Stealth Proxy
+              Create Stealth Address
             </button>
           </div>
         ) : (
-          // ── Main app ──
           <div className="anim-fade-up">
             <div className="mb-6">
               <div
@@ -160,7 +147,7 @@ export default function App() {
         )}
       </main>
 
-      {/* ── Signing modal — shown when Hyperliquid sends a request ── */}
+      {/* Signing modal */}
       {request && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-md anim-fade-in">
           <div className="w-[440px] bg-[#0c0c0c] border border-white/10 rounded-3xl p-8 shadow-2xl">

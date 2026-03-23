@@ -16,7 +16,7 @@ interface HeaderProps {
 
 const NAV = [
   { id: "deposit", label: "Deposit", icon: ArrowDownToLine },
-  { id: "proxy", label: "Proxy Safes", icon: Shield },
+  { id: "proxy", label: "Create Stealth", icon: Shield },
   { id: "connect", label: "Connect", icon: Link2 },
   { id: "trade", label: "Trade", icon: Diamond },
   { id: "portfolio", label: "Portfolio", icon: LayoutGrid },
@@ -116,11 +116,11 @@ const Header: FC<HeaderProps> = ({ page, setPage, wallet, setWallet }) => {
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
               <div className="flex flex-col items-end">
                 <span className="font-mono text-[9px] text-muted tracking-widest uppercase">
-                  {wallet.proxySafe ? "Active Proxy" : "EOA Linked"}
+                  {wallet.stealthAddress ? "Active Proxy" : "EOA Linked"}
                 </span>
                 <span className="font-mono text-[11px] text-white">
-                  {wallet.proxySafe 
-                    ? `${wallet.proxySafe.slice(0, 6)}...${wallet.proxySafe.slice(-4)}`
+                  {wallet.stealthAddress 
+                    ? `${wallet.stealthAddress.slice(0, 6)}...${wallet.stealthAddress.slice(-4)}`
                     : `${wallet.eoa?.slice(0, 6)}...${wallet.eoa?.slice(-4)}`
                   }
                 </span>
