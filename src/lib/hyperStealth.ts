@@ -5,45 +5,18 @@
  * All backend signing uses EIP-712 with domain { name: "HyperStealth", version: "1" }.
  */
 
-import { createWalletClient, http, getAddress } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { arbitrum } from "viem/chains";
+import { getAddress } from "viem";
 
 // ─────────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────────
 const BASE = (import.meta as any).env?.VITE_API_URL ?? "http://localhost:3001";
 const INFO_URL = "https://api.hyperliquid.xyz/info";
-const ARB_RPC = "https://arb1.arbitrum.io/rpc";
-const EXCHANGE_URL = "https://api.hyperliquid.xyz/exchange";
-const HL_DOMAIN = {
-  name: "HyperliquidSignTransaction",
-  version: "1",
-  chainId: 42161,
-  verifyingContract: "0x0000000000000000000000000000000000000000",
-} as const;
 
 const DOMAIN = {
   name: "HyperStealth",
   version: "1",
 } as const;
-
-const ERC20_ABI = [
-  // Functions
-  "function name() view returns (string)",
-  "function symbol() view returns (string)",
-  "function decimals() view returns (uint8)",
-  "function totalSupply() view returns (uint256)",
-  "function balanceOf(address account) view returns (uint256)",
-  "function transfer(address to, uint256 amount) returns (bool)",
-  "function allowance(address owner, address spender) view returns (uint256)",
-  "function approve(address spender, uint256 amount) returns (bool)",
-  "function transferFrom(address from, address to, uint256 amount) returns (bool)",
-
-  // Events
-  "event Transfer(address indexed from, address indexed to, uint256 value)",
-  "event Approval(address indexed owner, address indexed spender, uint256 value)",
-];
 
 // ─────────────────────────────────────────────────────────────
 // INTERNAL HELPERS
@@ -107,25 +80,6 @@ async function get<T>(path: string): Promise<T> {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? `API error ${res.status}`);
   return data as T;
-}
-
-/** Sign with Stealth Private Key (No Popup) */
-async function signWithStealthKey(
-  stealthKey: string,
-  types: Record<string, { name: string; type: string }[]>,
-  primaryType: string,
-  message: Record<string, unknown>
-): Promise<string> {
-  const account = privateKeyToAccount(
-    stealthKey.startsWith("0x") ? (stealthKey as `0x${string}`) : (`0x${stealthKey}` as `0x${string}`)
-  );
-  const client = createWalletClient({ account, chain: arbitrum, transport: http(ARB_RPC) });
-  return await client.signTypedData({
-    domain: DOMAIN,
-    types,
-    primaryType,
-    message: message as any,
-  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -198,10 +152,6 @@ export async function apiStealthAddresses(eoaAddress: string): Promise<StealthAd
 // BRIDGE & BALANCE API (Horizen/Manual Flow)
 // ─────────────────────────────────────────────────────────────
 
-/** Manually record a deposit (Admin/Internal) */
-export const apiRecordDeposit = (userAddress: string, stealthAddress: string, amount: string) => 
-  post<{ success: boolean }>("/record-deposit", { userAddress, stealthAddress, amount });
-
 /** Check user balance on backend */
 export const apiGetBalance = (address: string) => 
   get<BalanceResponse>(`/balance/${getAddress(address)}`);
@@ -224,15 +174,13 @@ export async function apiBridge(eoaAddress: string, amount: string): Promise<Bri
 export const apiGetBridgeStatus = (txHash: string) => 
   get<BridgeStatusResponse>(`/bridge-status/${txHash}`);
 
-/** POST /deposit (Signs with Stealth Key) */
+/** POST /deposit (EOA signs EIP-712, server derives stealth key for permit) */
 export async function apiDeposit(
   eoaAddress: string,
   stealthAddress: string,
   amount: string,
-  stealthKey: string
 ): Promise<DepositResponse> {
-  const signature = await signWithStealthKey(
-    stealthKey,
+  const signature = await signWithEOA(
     { Deposit: [{ name: "stealthAddress", type: "address" }, { name: "amount", type: "uint256" }] },
     "Deposit",
     { stealthAddress: getAddress(stealthAddress), amount: BigInt(amount) }
@@ -245,30 +193,31 @@ export async function apiDeposit(
   });
 }
 
-/** Withdraw (Bridge Out) - Signs Withdraw3 and posts to HL Directly */
-export async function apiWithdraw(stealthKey: string, destination: string, amountHuman: string) {
-  const account = privateKeyToAccount(stealthKey.startsWith("0x") ? (stealthKey as any) : `0x${stealthKey}`);
-  const client = createWalletClient({ account, chain: arbitrum, transport: http(ARB_RPC) });
-  const time = Date.now();
+export interface WithdrawResponse { success: boolean; txHash?: string; }
 
-  const signature = await client.signTypedData({
-    domain: HL_DOMAIN,
-    types: { "Hyperliquid:Withdraw3": [{ name: "hyperliquidChain", type: "string" }, { name: "destination", type: "string" }, { name: "amount", type: "string" }, { name: "time", type: "uint64" }] },
-    primaryType: "Hyperliquid:Withdraw3",
-    message: { hyperliquidChain: "Mainnet", destination: destination.toLowerCase(), amount: amountHuman, time: BigInt(time) },
+/** POST /withdraw (EOA signs EIP-712, server derives stealth key for HL withdraw3) */
+export async function apiWithdraw(
+  eoaAddress: string,
+  stealthAddress: string,
+  destination: string,
+  amount: string,
+): Promise<WithdrawResponse> {
+  const signature = await signWithEOA(
+    { Withdraw: [
+      { name: "stealthAddress", type: "address" },
+      { name: "destination", type: "address" },
+      { name: "amount", type: "uint256" },
+    ] },
+    "Withdraw",
+    { stealthAddress: getAddress(stealthAddress), destination: getAddress(destination), amount: BigInt(amount) }
+  );
+  return post<WithdrawResponse>("/withdraw", {
+    recipientAddress: getAddress(eoaAddress),
+    stealthAddress: getAddress(stealthAddress),
+    destination: getAddress(destination),
+    amount,
+    signature,
   });
-
-  const raw = signature.slice(2);
-  const body = {
-    action: { type: "withdraw3", hyperliquidChain: "Mainnet", signatureChainId: "0xa4b1", destination: destination.toLowerCase(), amount: amountHuman, time },
-    nonce: time,
-    signature: { r: `0x${raw.slice(0, 64)}`, s: `0x${raw.slice(64, 128)}`, v: parseInt(raw.slice(128, 130), 16) },
-  };
-
-  const res = await fetch(EXCHANGE_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const data = await res.json();
-  if (!res.ok || data.status === "err") throw new Error(data.response || data.error || "HL Withdrawal Failed");
-  return data;
 }
 
 

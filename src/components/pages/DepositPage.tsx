@@ -8,9 +8,9 @@ import {
 import { GlowCard, Badge, Btn, Input } from "@/components/ui";
 import { C } from "@/lib/tokens";
 import { parseUnits } from "viem";
-import { 
-  apiDeposit, apiWithdraw, apiBridge, apiGetBridgeStatus,
-  getStoredEOA, getStoredStealthKey, getStoredStealthAddress 
+import {
+  apiDeposit, apiWithdraw, apiBridge, apiGetBridgeStatus, apiGetBalance,
+  getStoredEOA, getStoredStealthAddress
 } from "@/lib/hyperStealth";
 import { WalletState } from "../../App";
 
@@ -18,11 +18,15 @@ import { WalletState } from "../../App";
 // TYPES & CONSTANTS
 // ─────────────────────────────────────────────────────────────
 type Mode = "deposit" | "withdraw";
+type DepositMethod = "bridge" | "direct";
 type Step = "IDLE" | "SIGNING_BRIDGE" | "BRIDGING" | "SIGNING_ACTION" | "SUBMITTING" | "SUCCESS" | "ERROR";
 
 const USDC_DECIMALS = 6;
 const MIN_DEPOSIT = 5;
-const HORIZEN_ID = "0x2af";
+const HORIZEN_ID = "0x6792";
+const ARBITRUM_ID = "0xa4b1";
+const HORIZEN_USDC = "0xDF7108f8B10F9b9eC1aba01CCa057268cbf86B6c";  // USDC.e on Horizen
+const CENTRAL_WALLET = "0xFB3fF1767A0a6c0d3b5fE61882B1460458372FCF"; // approval target for bridge transferFrom
 
 // ─────────────────────────────────────────────────────────────
 // COMPONENTS
@@ -47,7 +51,8 @@ const ModalOverlay = ({ children, onClose }: { children: React.ReactNode, onClos
 
 export default function DepositPage({ wallet }: { wallet: WalletState }) {
   const [mode, setMode] = useState<Mode>("deposit");
-  const [amount, setAmount] = useState("100");
+  const [depositMethod, setDepositMethod] = useState<DepositMethod>("bridge");
+  const [amount, setAmount] = useState("10");
   const [destination, setDestination] = useState("");
   
   // Transaction State
@@ -60,51 +65,134 @@ export default function DepositPage({ wallet }: { wallet: WalletState }) {
   const eoaAddress = wallet.eoa ?? getStoredEOA();
   const isReady = !!(stealthAddress && eoaAddress);
 
-  // ── LOGIC: DEPOSIT FLOW (BRIDGE -> DEPOSIT) ──
-  const handleDeposit = async () => {
+  // ── BALANCE STATE ──
+  const [availableBalance, setAvailableBalance] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!eoaAddress) return;
+    const fetchBal = async () => {
+      try {
+        const bal = await apiGetBalance(eoaAddress);
+        setAvailableBalance(bal.available || "0");
+      } catch { /* ignore */ }
+    };
+    fetchBal();
+    const interval = setInterval(fetchBal, 10000);
+    return () => clearInterval(interval);
+  }, [eoaAddress]);
+
+  const availableUSDC = availableBalance ? (Number(availableBalance) / 1e6).toFixed(2) : "...";
+
+  // ── LOGIC: DIRECT DEPOSIT (deposit available server-side balance to HL) ──
+  const handleDirectDeposit = async () => {
     if (!isReady) return setError("Identity missing");
     setError(null);
-    setStep("SIGNING_BRIDGE");
 
     try {
-      const rawAmount = parseUnits(amount, USDC_DECIMALS).toString();
-      await switchChain(HORIZEN_ID);
+      const bal = await apiGetBalance(eoaAddress!);
+      const available = BigInt(bal.available || "0");
 
-    // STEP 2: APPROVE TOKEN (If needed)
-    // You can add a checkAllowance here, but for now let's call approve
-    console.log("[Bridge] Requesting Approval on Horizen...");
-    await approveToken(HORIZEN_USDC, BRIDGE_CONTRACT, rawAmount);
-
-    // STEP 3: SIGN BRIDGE (EIP-712)
-    console.log("[Bridge] Signing Bridge Action...");
-      // 1. Sign & Initiate Bridge (Horizen -> Arbitrum)
-      const bridgeRes = await apiBridge(eoaAddress!, rawAmount);
-      setBridgeTx(bridgeRes.txHash);
-      setStep("BRIDGING");
-
-      // 2. Poll Status until DELIVERED
-      let delivered = false;
-      while (!delivered) {
-        const statusRes = await apiGetBridgeStatus(bridgeRes.txHash);
-        if (statusRes.status === "DELIVERED") delivered = true;
-        else if (statusRes.status === "FAILED") throw new Error("Bridge failed");
-        else await new Promise(r => setTimeout(r, 5000)); // Poll every 5s
+      if (available < BigInt(5_000_000)) {
+        throw new Error(`Insufficient available balance: $${(Number(available) / 1e6).toFixed(2)} USDC. Bridge funds first.`);
       }
 
-      // 3. Sign Deposit (Stealth Key)
+      // Deposit all available balance to HL
       setStep("SIGNING_ACTION");
-      const stealthKey = getStoredStealthKey();
-      if (!stealthKey) throw new Error("Stealth key missing");
-      
+
       setStep("SUBMITTING");
-      const depRes = await apiDeposit(eoaAddress!, stealthAddress!, rawAmount, stealthKey);
-      
+      const depRes = await apiDeposit(eoaAddress!, stealthAddress!, available.toString());
+
+      setTxHash(depRes.txHash);
+      setStep("SUCCESS");
+      setAvailableBalance("0");
+    } catch (e: any) {
+      setError(e.message || "Deposit failed");
+      setStep("ERROR");
+    }
+  };
+
+  // ── LOGIC: BRIDGE + DEPOSIT (Horizen → Arbitrum → HL) ──
+  const [busy, setBusy] = useState(false);
+  const handleBridgeDeposit = async () => {
+    if (!isReady) return setError("Identity missing");
+    if (busy) return; // prevent double-calls
+    setBusy(true);
+    setError(null);
+
+    try {
+      // Check existing available balance first (retry scenario)
+      const existingBal = await apiGetBalance(eoaAddress!);
+      const existingAvailable = BigInt(existingBal.available || "0");
+      const rawAmount = parseUnits(amount, USDC_DECIMALS).toString();
+
+      let depositAmount: string;
+
+      if (existingAvailable >= BigInt(5_000_000)) {
+        // Skip bridge — user already has funds from a previous bridge
+        console.log("[Bridge Deposit] Existing balance found, skipping bridge:", existingAvailable.toString());
+        depositAmount = existingAvailable.toString();
+      } else {
+        // Need to bridge first
+        setStep("SIGNING_BRIDGE");
+        await switchChain(HORIZEN_ID);
+
+        // Check on-chain USDC.e balance before proceeding
+        const onChainBal = await getTokenBalance(HORIZEN_USDC, eoaAddress!);
+        if (BigInt(onChainBal) < BigInt(rawAmount)) {
+          const have = (Number(onChainBal) / 1e6).toFixed(2);
+          const need = amount;
+          throw new Error(`Insufficient USDC.e on Horizen: you have ${have}, need ${need}`);
+        }
+
+        // Approve token (if needed)
+        console.log("[Bridge] Requesting Approval on Horizen...");
+        await approveToken(HORIZEN_USDC, CENTRAL_WALLET, rawAmount);
+
+        // Sign & Initiate Bridge (Horizen -> Arbitrum)
+        console.log("[Bridge] Signing Bridge Action...");
+        const bridgeRes = await apiBridge(eoaAddress!, rawAmount);
+        setBridgeTx(bridgeRes.txHash);
+        setStep("BRIDGING");
+
+        // Poll Status until DELIVERED
+        let delivered = false;
+        while (!delivered) {
+          const statusRes = await apiGetBridgeStatus(bridgeRes.txHash);
+          if (statusRes.status === "DELIVERED") delivered = true;
+          else if (statusRes.status === "FAILED") throw new Error("Bridge failed");
+          else await new Promise(r => setTimeout(r, 5000));
+        }
+
+        // Switch back to Arbitrum for deposit
+        await switchChain(ARBITRUM_ID);
+
+        // Fetch actual available balance (after Stargate fees)
+        const balRes = await apiGetBalance(eoaAddress!);
+        depositAmount = balRes.available;
+        if (!depositAmount || depositAmount === "0") throw new Error("No available balance after bridge");
+      }
+
+      // Sign Deposit (EOA signs EIP-712, server uses stealth key for permit)
+      setStep("SIGNING_ACTION");
+
+      setStep("SUBMITTING");
+      const depRes = await apiDeposit(eoaAddress!, stealthAddress!, depositAmount);
+
       setTxHash(depRes.txHash);
       setStep("SUCCESS");
     } catch (e: any) {
       setError(e.message || "Deposit failed");
       setStep("ERROR");
+    } finally {
+      setBusy(false);
     }
+  };
+
+  const handleDeposit = depositMethod === "bridge" ? handleBridgeDeposit : handleDirectDeposit;
+
+  const CHAIN_CONFIG: Record<string, { name: string; rpcUrl: string; nativeCurrency: { name: string; symbol: string; decimals: number } }> = {
+    [HORIZEN_ID]: { name: "Horizen Mainnet", rpcUrl: "https://horizen.calderachain.xyz/http", nativeCurrency: { name: "ZEN", symbol: "ZEN", decimals: 18 } },
+    [ARBITRUM_ID]: { name: "Arbitrum One", rpcUrl: "https://arb1.arbitrum.io/rpc", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 } },
   };
 
   async function switchChain(chainId: string) {
@@ -115,8 +203,18 @@ export default function DepositPage({ wallet }: { wallet: WalletState }) {
         params: [{ chainId }],
       });
     } catch (err: any) {
-      // If chain isn't added to MetaMask, you might need wallet_addEthereumChain here
-      throw new Error(`Please switch your wallet to ${chainId === HORIZEN_ID ? 'Horizen' : 'Arbitrum'}`);
+      // 4902 = chain not added to wallet — try adding it
+      if (err.code === 4902) {
+        const cfg = CHAIN_CONFIG[chainId];
+        if (cfg) {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [{ chainId, chainName: cfg.name, rpcUrls: [cfg.rpcUrl], nativeCurrency: cfg.nativeCurrency }],
+          });
+          return;
+        }
+      }
+      throw err;
     }
   }
   
@@ -126,20 +224,73 @@ export default function DepositPage({ wallet }: { wallet: WalletState }) {
   async function approveToken(tokenAddress: string, spender: string, amount: string) {
     if (!window.ethereum) throw new Error("No wallet found");
     const [from] = await window.ethereum.request({ method: "eth_requestAccounts" });
-  
-    // Simple ERC-20 Approve Data: method id 0x095ea7b3 + spender + amount
+
+    // ERC-20 approve(spender, amount) — 0x095ea7b3
     const data = `0x095ea7b3${spender.replace("0x", "").padStart(64, "0")}${BigInt(amount)
       .toString(16)
       .padStart(64, "0")}`;
-  
-    const tx = await window.ethereum.request({
+
+    const txHash = await window.ethereum.request({
       method: "eth_sendTransaction",
       params: [{ from, to: tokenAddress, data }],
     });
-  
-    // Wait for approval to be mined (optional but recommended)
-    console.log("Approval TX submitted:", tx);
-    // You could use viem's waitForTransactionReceipt here
+    console.log("[Approve] TX submitted:", txHash);
+
+    // Wait for approval to be mined before proceeding
+    let receipt = null;
+    while (!receipt) {
+      await new Promise(r => setTimeout(r, 2000));
+      receipt = await window.ethereum.request({
+        method: "eth_getTransactionReceipt",
+        params: [txHash],
+      });
+    }
+    if (receipt.status === "0x0") throw new Error("Approval transaction reverted");
+    console.log("[Approve] Mined ✓");
+  }
+
+  /**
+   * Read ERC-20 balanceOf via eth_call
+   */
+  async function getTokenBalance(tokenAddress: string, owner: string): Promise<string> {
+    if (!window.ethereum) throw new Error("No wallet found");
+    // balanceOf(address) — 0x70a08231
+    const data = `0x70a08231${owner.replace("0x", "").padStart(64, "0")}`;
+    const result = await window.ethereum.request({
+      method: "eth_call",
+      params: [{ to: tokenAddress, data }, "latest"],
+    });
+    return BigInt(result).toString();
+  }
+
+  /**
+   * Standard ERC-20 transfer
+   */
+  async function transferToken(tokenAddress: string, to: string, amount: string) {
+    if (!window.ethereum) throw new Error("No wallet found");
+    const [from] = await window.ethereum.request({ method: "eth_requestAccounts" });
+
+    // ERC-20 transfer(to, amount) — 0xa9059cbb
+    const data = `0xa9059cbb${to.replace("0x", "").padStart(64, "0")}${BigInt(amount)
+      .toString(16)
+      .padStart(64, "0")}`;
+
+    const txHash = await window.ethereum.request({
+      method: "eth_sendTransaction",
+      params: [{ from, to: tokenAddress, data }],
+    });
+    console.log("[Transfer] TX submitted:", txHash);
+
+    let receipt = null;
+    while (!receipt) {
+      await new Promise(r => setTimeout(r, 2000));
+      receipt = await window.ethereum.request({
+        method: "eth_getTransactionReceipt",
+        params: [txHash],
+      });
+    }
+    if (receipt.status === "0x0") throw new Error("Transfer transaction reverted");
+    console.log("[Transfer] Mined ✓");
   }
 
   // ── LOGIC: WITHDRAW FLOW ──
@@ -149,14 +300,11 @@ export default function DepositPage({ wallet }: { wallet: WalletState }) {
     setStep("SIGNING_ACTION");
 
     try {
-      const stealthKey = getStoredStealthKey();
-      if (!stealthKey) throw new Error("Stealth key missing");
-      
-      const amountStr = parseFloat(amount).toFixed(1);
-      
+      const rawAmount = parseUnits(amount, USDC_DECIMALS).toString();
+
       setStep("SUBMITTING");
-      await apiWithdraw(stealthKey, destination, amountStr);
-      
+      await apiWithdraw(eoaAddress!, stealthAddress!, destination, rawAmount);
+
       setStep("SUCCESS");
     } catch (e: any) {
       setError(e.message || "Withdraw failed");
@@ -184,24 +332,57 @@ export default function DepositPage({ wallet }: { wallet: WalletState }) {
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <Badge variant={mode === "deposit" ? "success" : "warning"} pulse>
-                {mode === "deposit" ? "Bridge + Deposit" : "Direct Withdrawal"}
+                {mode === "deposit"
+                  ? (depositMethod === "bridge" ? "Bridge + Deposit" : "Direct Deposit")
+                  : "Direct Withdrawal"}
               </Badge>
               <div className="text-[10px] font-mono text-white/30 uppercase tracking-widest">HL Mainnet</div>
             </div>
 
-            <Input label="Amount (USDC)" value={amount} onChange={setAmount} suffix="USDC" mono />
+            {/* Deposit Method Selector */}
+            {mode === "deposit" && (
+              <div className="flex p-1 rounded-xl bg-white/5 border border-white/5">
+                {([["bridge", "Bridge from Horizen"], ["direct", "Deposit Available"]] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setDepositMethod(key as DepositMethod)}
+                    className={`flex-1 px-3 py-2 rounded-lg font-mono text-[10px] transition-all ${
+                      depositMethod === key ? 'bg-white/10 text-white shadow' : 'text-white/40 hover:text-white/60'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Available balance display for direct deposit */}
+            {mode === "deposit" && depositMethod === "direct" && (
+              <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
+                <div className="text-[10px] font-mono text-white/40 uppercase mb-1">Available to Deposit</div>
+                <div className="text-lg font-bold font-mono text-white">{availableUSDC} <span className="text-xs text-white/40">USDC</span></div>
+                <div className="text-[10px] font-mono text-white/30 mt-1">Funds held by server from previous bridges</div>
+              </div>
+            )}
+
+            {/* Amount input — only for bridge and withdraw */}
+            {(mode === "withdraw" || (mode === "deposit" && depositMethod === "bridge")) && (
+              <Input label="Amount (USDC)" value={amount} onChange={setAmount} suffix="USDC" mono />
+            )}
 
             {mode === "withdraw" && (
               <Input label="Recipient Address" value={destination} onChange={setDestination} placeholder="0x..." mono />
             )}
 
-            <Btn 
-              variant={mode === "deposit" ? "success" : "primary"} 
-              full 
+            <Btn
+              variant={mode === "deposit" ? "success" : "primary"}
+              full
               onClick={mode === "deposit" ? handleDeposit : handleWithdraw}
               disabled={step !== "IDLE" || !isReady}
             >
-              {mode === "deposit" ? "Initiate Secure Bridge" : "Withdraw Funds"}
+              {mode === "deposit"
+                ? (depositMethod === "bridge" ? "Bridge & Deposit" : "Deposit USDC")
+                : "Withdraw Funds"}
             </Btn>
           </div>
         </GlowCard>
@@ -250,37 +431,68 @@ export default function DepositPage({ wallet }: { wallet: WalletState }) {
 
               {/* Progress Steps */}
               <div className="space-y-6">
-                <ProgressStep 
-                  label="Authorize Bridge" 
-                  sub="Sign EIP-712 on Horizen" 
-                  status={step === "SIGNING_BRIDGE" ? "active" : (mode === "withdraw" || step === "BRIDGING" || step === "SIGNING_ACTION" || step === "SUBMITTING" || step === "SUCCESS" ? "done" : "pending")} 
-                />
-                
-                {mode === "deposit" && (
-                  <ProgressStep 
-                    label="Bridging Funds" 
-                    sub="Stargate V2: Horizen → Arbitrum" 
-                    status={step === "BRIDGING" ? "active" : (step === "SIGNING_ACTION" || step === "SUBMITTING" || step === "SUCCESS" ? "done" : "pending")} 
-                  />
+                {/* Bridge steps — only for bridge deposit method */}
+                {mode === "deposit" && depositMethod === "bridge" && (
+                  <>
+                    <ProgressStep
+                      label="Authorize Bridge"
+                      sub="Sign EIP-712 on Horizen"
+                      status={step === "SIGNING_BRIDGE" ? "active" : (step === "BRIDGING" || step === "SIGNING_ACTION" || step === "SUBMITTING" || step === "SUCCESS" ? "done" : "pending")}
+                    />
+                    <ProgressStep
+                      label="Bridging Funds"
+                      sub="Stargate V2: Horizen → Arbitrum"
+                      status={step === "BRIDGING" ? "active" : (step === "SIGNING_ACTION" || step === "SUBMITTING" || step === "SUCCESS" ? "done" : "pending")}
+                    />
+                  </>
                 )}
 
-                <ProgressStep 
-                  label="Final Confirmation" 
-                  sub={mode === "deposit" ? "Signing HL Deposit Permit" : "Signing HL Withdrawal"} 
-                  status={step === "SIGNING_ACTION" ? "active" : (step === "SUBMITTING" || step === "SUCCESS" ? "done" : "pending")} 
+                <ProgressStep
+                  label={mode === "withdraw" ? "Sign Withdrawal" : "Sign Deposit"}
+                  sub={mode === "withdraw" ? "EIP-712 withdrawal authorization" : "EIP-712 deposit permit"}
+                  status={step === "SIGNING_ACTION" ? "active" : (step === "SUBMITTING" || step === "SUCCESS" ? "done" : "pending")}
                 />
 
-                <ProgressStep 
-                  label="Settlement" 
-                  sub="Hyperliquid ledger update" 
-                  status={step === "SUBMITTING" ? "active" : (step === "SUCCESS" ? "done" : "pending")} 
+                <ProgressStep
+                  label="Settlement"
+                  sub="Hyperliquid ledger update"
+                  status={step === "SUBMITTING" ? "active" : (step === "SUCCESS" ? "done" : "pending")}
                 />
               </div>
 
-              {/* Error Message */}
-              {error && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/20">
-                  <p className="text-[11px] text-red-400 font-mono leading-relaxed">{error}</p>
+              {/* Error Message + Retry */}
+              {step === "ERROR" && error && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-6 space-y-3">
+                  <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20">
+                    <p className="text-[11px] text-red-400 font-mono leading-relaxed">{error}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    {mode === "deposit" && depositMethod === "bridge" && (
+                      <Btn variant="primary" full onClick={async () => {
+                        try {
+                          await switchChain(HORIZEN_ID);
+                          setStep("IDLE"); setError(null);
+                          handleBridgeDeposit();
+                        } catch { /* user rejected */ }
+                      }}>
+                        Switch to Horizen & Retry
+                      </Btn>
+                    )}
+                    {mode === "deposit" && depositMethod === "direct" && (
+                      <Btn variant="primary" full onClick={async () => {
+                        try {
+                          await switchChain(ARBITRUM_ID);
+                          setStep("IDLE"); setError(null);
+                          handleDirectDeposit();
+                        } catch { /* user rejected */ }
+                      }}>
+                        Switch to Arbitrum & Retry
+                      </Btn>
+                    )}
+                    <Btn variant="primary" full onClick={() => { setStep("IDLE"); setError(null); }}>
+                      Dismiss
+                    </Btn>
+                  </div>
                 </motion.div>
               )}
 

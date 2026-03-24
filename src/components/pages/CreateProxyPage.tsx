@@ -188,18 +188,38 @@ export default function CreateProxyPage({
     }
   };
 
-  // Switch active stealth address
-  const handleSelect = (proxy: ProxyEntry) => {
-    localStorage.setItem("nyra_active_stealth", proxy.address);
-    sessionStorage.setItem("nyra_stealth_address", proxy.address);
+  // Switch active stealth address — derive key from backend
+  const [deriving, setDeriving] = useState<string | null>(null);
+  const handleSelect = async (proxy: ProxyEntry) => {
+    try {
+      setDeriving(proxy.address);
+      setError(null);
 
-    // Note: switching address requires fetching that address's key from backend.
-    // For now we alert — full multi-key switching can be added later.
-    setWallet((prev) => ({
-      ...prev,
-      activeProxy:    proxy.address,
-      stealthAddress: proxy.address,
-    }));
+      const eoa = await getConnectedEOA();
+
+      // Derive the stealth private key for this address
+      const { stealthPrivateKey } = await apiDeriveKey(eoa, proxy.address);
+
+      // Persist
+      localStorage.setItem("nyra_active_stealth", proxy.address);
+      localStorage.setItem("nyra_stealth_key", stealthPrivateKey);
+      sessionStorage.setItem("nyra_stealth_address", proxy.address);
+      sessionStorage.setItem("nyra_stealth_key", stealthPrivateKey);
+
+      setWallet((prev) => ({
+        ...prev,
+        activeProxy:    proxy.address,
+        stealthAddress: proxy.address,
+      }));
+
+      console.log("[Nyra] Activated stealth address:", proxy.address);
+    } catch (err: any) {
+      console.error("[Nyra] Derive key failed:", err);
+      setError(err.message ?? "Failed to derive key");
+      setPhase("error");
+    } finally {
+      setDeriving(null);
+    }
   };
 
   const currentStepIndex = STEPS.findIndex((s) => s.p === phase);
@@ -342,8 +362,9 @@ export default function CreateProxyPage({
             ) : (
               proxies.map((p, i) => {
                 const isActive = wallet.activeProxy === p.address;
+                const isDeriving = deriving === p.address;
                 return (
-                  <GlowCard key={i} onClick={() => handleSelect(p)} style={{ cursor: "pointer" }}>
+                  <GlowCard key={i} onClick={() => !isDeriving && handleSelect(p)} style={{ cursor: isDeriving ? "wait" : "pointer" }}>
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-4">
                         <div
@@ -359,9 +380,15 @@ export default function CreateProxyPage({
                           </div>
                         </div>
                       </div>
-                      <Badge variant={isActive ? "success" : "secondary"} pulse={isActive}>
-                        {isActive ? "Active" : "Ready"}
-                      </Badge>
+                      {isDeriving ? (
+                        <Badge variant="warning" pulse>
+                          <RefreshCw size={10} className="mr-1 anim-spin" />Signing...
+                        </Badge>
+                      ) : (
+                        <Badge variant={isActive ? "success" : "secondary"} pulse={isActive}>
+                          {isActive ? "Active" : "Click to Activate"}
+                        </Badge>
+                      )}
                     </div>
                   </GlowCard>
                 );
