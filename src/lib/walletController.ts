@@ -12,6 +12,7 @@ import {
   generateStealthAddresses,
   generateStealthPrivateKey,
 } from "@fluidkey/stealth-account-kit";
+import { KeyValueStorage } from "@walletconnect/keyvaluestorage";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -30,38 +31,28 @@ export interface StealthProxyResult {
   stealthAddress: string;
 }
 
-/**
- * Derives a stealth address + private key from a wallet signer.
- * nonce=0 → first address, nonce=1 → second, etc.
- * Pure key derivation — no on-chain tx, no Safe, no gas needed.
- */
 export async function generateStealthProxy(
   signer: ethers.Signer,
   nonce = 0
 ): Promise<StealthProxyResult> {
   const signature = (await signer.signMessage(SIGN_MESSAGE)) as `0x${string}`;
-
   const { spendingPrivateKey, viewingPrivateKey } = generateKeysFromSignature(signature);
   const spendingAccount = privateKeyToAccount(spendingPrivateKey);
-
   const viewingPrivateKeyNode = extractViewingPrivateKeyNode(viewingPrivateKey, 0);
   const { ephemeralPrivateKey } = generateEphemeralPrivateKey({
     viewingPrivateKeyNode,
     nonce: BigInt(nonce),
     chainId: CHAIN_ID,
   });
-
   const { stealthAddresses } = generateStealthAddresses({
     spendingPublicKeys: [spendingAccount.publicKey],
     ephemeralPrivateKey,
   });
   const stealthAddress = getAddress(stealthAddresses[0]);
-
   const { stealthPrivateKey } = await generateStealthPrivateKey({
     spendingPrivateKey,
     ephemeralPublicKey: privateKeyToAccount(ephemeralPrivateKey).publicKey,
   });
-
   return { stealthPrivateKey, stealthAddress };
 }
 
@@ -76,13 +67,10 @@ export type PendingRequest = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// PUB/SUB — bridges WalletConnect events to React state
+// PUB/SUB
 // ─────────────────────────────────────────────────────────────
 let pendingResolve: ((approved: boolean) => void) | null = null;
 const listeners: Set<(req: PendingRequest | null) => void> = new Set();
-
-// Replaceable session_proposal handler — ConnectPage sets this before each pair().
-// Stored here so it always fires on the singleton instance, not a recreated one.
 let sessionProposalHandler: ((proposal: any) => Promise<void>) | null = null;
 
 export function setSessionProposalHandler(fn: ((proposal: any) => Promise<void>) | null): void {
@@ -125,7 +113,6 @@ function getStoredKeys(): { stealthKey: string; stealthAddress: string } | null 
 
   if (!stealthKey || !stealthAddress) return null;
   if (!stealthKey.startsWith("0x")) stealthKey = `0x${stealthKey}`;
-
   return { stealthKey, stealthAddress: getAddress(stealthAddress) };
 }
 
@@ -135,47 +122,18 @@ function ensure0x(hex: string): `0x${string}` {
 
 // ─────────────────────────────────────────────────────────────
 // WALLETCONNECT SINGLETON
+//
+// With createAppKit() removed from wagmiConfig.tsx, there is now exactly
+// ONE WC Core in the page. The "No matching key" race is gone because
+// there is no second Core to intercept and corrupt our relay envelopes.
+//
+// The singleton is kept alive across re-pairs (we only disconnect
+// sessions, never destroy the Core) because:
+//   - session_proposal and session_request listeners are registered once
+//   - The Core's X25519 keypairs in IndexedDB remain valid for the life
+//     of the page; pair() can be called multiple times safely
 // ─────────────────────────────────────────────────────────────
 let walletPromise: Promise<IWeb3Wallet> | null = null;
-
-async function purgeWalletConnectStorage(): Promise<void> {
-  if (typeof window === "undefined") return;
-  try {
-    const dbs = await Promise.race([
-      window.indexedDB.databases(),
-      new Promise<IDBDatabaseInfo[]>((res) => setTimeout(() => res([]), 1000)),
-    ]);
-
-    const wcDbs = dbs.filter(
-      (db) =>
-        db.name &&
-        (db.name.includes("walletconnect") ||
-          db.name.includes("WALLET_CONNECT") ||
-          db.name.startsWith("wc@") ||
-          db.name.startsWith("wc2"))
-    );
-
-    if (wcDbs.length === 0) {
-      console.log("[Nyra] purge — no WC databases found");
-      return;
-    }
-
-    await Promise.all(
-      wcDbs.map(
-        (db) =>
-          new Promise<void>((res) => {
-            const req = window.indexedDB.deleteDatabase(db.name!);
-            req.onsuccess = () => res();
-            req.onerror = () => res();
-            req.onblocked = () => res();
-          })
-      )
-    );
-    console.log("[Nyra] purge — deleted", wcDbs.length, "WC database(s)");
-  } catch (e) {
-    console.warn("[Nyra] Could not purge WC IndexedDB:", e);
-  }
-}
 
 export async function getWeb3Wallet(): Promise<IWeb3Wallet> {
   if (walletPromise) return walletPromise;
@@ -184,80 +142,80 @@ export async function getWeb3Wallet(): Promise<IWeb3Wallet> {
     const { Core } = await import("@walletconnect/core");
     const { Web3Wallet } = await import("@walletconnect/web3wallet");
 
-    const core = new Core({ projectId: WC_PROJECT_ID });
+    // CRITICAL: This is the ONLY way to stop the "No matching key" error.
+    // It creates a separate database called 'nyra-terminal-v1' 
+    // so it doesn't collide with RainbowKit.
+    const core = new Core({
+      projectId: WC_PROJECT_ID,
+      storage: new KeyValueStorage({ 
+        database: "nyra-terminal-v1" 
+      }),
+    });
+
     const wallet = await Web3Wallet.init({
       core: core as any,
       metadata: {
-        name: "Nyra Terminal",
+        name: "Nyra Stealth",
         description: "Private Trading",
         url: typeof window !== "undefined" ? window.location.origin : "https://nyra.app",
         icons: [],
       },
     });
 
-    // session_proposal: registered once, routes to replaceable handler set by ConnectPage
-    wallet.on("session_proposal", async (proposal: any) => {
-      if (sessionProposalHandler) {
-        await sessionProposalHandler(proposal);
-      } else {
-        console.warn("[Nyra] session_proposal received but no handler registered — call setSessionProposalHandler() before pairing");
-      }
+    // ── IMPORTANT: Listeners MUST be attached immediately ──
+    wallet.on("session_proposal", async (proposal) => {
+      if (sessionProposalHandler) await sessionProposalHandler(proposal);
     });
 
-    // session_request: registered once, never in page components
-    wallet.on("session_request", async (event: any) => {
-      const { method } = event.params.request;
+    wallet.on("session_request", async (event) => {
       const { topic, id, params } = event;
+      const { method } = params.request;
+
+      console.log("[Stealth] Incoming Request:", method);
 
       const keys = getStoredKeys();
       if (!keys) {
+        // ── CRITICAL: do NOT silently return ──
+        // Notify the UI so it can show a "key not found" error instead of
+        // leaving the user stuck on "Awaiting HL Auth" forever.
+        console.error("[Stealth] ERROR: No stealth keys in storage — cannot sign. Check nyra_stealth_key in localStorage.");
+        notifyListeners({ method, topic, id, params, missingKeys: true } as any);
+        // Respond with error so HL doesn't hang waiting
         await wallet.respondSessionRequest({
           topic,
-          response: {
-            id,
-            jsonrpc: "2.0",
-            error: { code: 4100, message: "No stealth address found — create one first" },
-          },
+          response: { id, jsonrpc: "2.0", error: { code: 4001, message: "Stealth key not found in storage" } },
         });
         return;
       }
 
-      const { stealthKey } = keys;
-      const approved = await waitForUserApproval({ method, topic, id, params });
+      // ── This triggers the 'Confirm & Sign' modal in App.tsx ──
+      const approved = await new Promise<boolean>((resolve) => {
+        pendingResolve = resolve;
+        notifyListeners({ method, topic, id, params });
+      });
 
       if (!approved) {
-        await wallet.respondSessionRequest({
+        return wallet.respondSessionRequest({
           topic,
-          response: {
-            id,
-            jsonrpc: "2.0",
-            error: { code: 4001, message: "User rejected the request" },
-          },
+          response: { id, jsonrpc: "2.0", error: { code: 4001, message: "User rejected" } },
         });
-        return;
       }
 
-      switch (method) {
-        case "eth_signTypedData":
-        case "eth_signTypedData_v4":
-          await handleSignTypedData(wallet, event, stealthKey);
-          break;
-        case "personal_sign":
-        case "eth_sign":
-          await handlePersonalSign(wallet, event, stealthKey);
-          break;
-        case "eth_sendTransaction":
-          await handleSendTransaction(wallet, event, stealthKey);
-          break;
-        default:
-          await wallet.respondSessionRequest({
-            topic,
-            response: {
-              id,
-              jsonrpc: "2.0",
-              error: { code: 4200, message: `Unsupported method: ${method}` },
-            },
-          });
+      // Handle Signing
+      try {
+        if (method.includes("signTypedData")) {
+            await handleSignTypedData(wallet, event, keys.stealthKey);
+        } else if (method === "personal_sign" || method === "eth_sign") {
+            await handlePersonalSign(wallet, event, keys.stealthKey);
+        } else if (method === "eth_sendTransaction") {
+            await handleSendTransaction(wallet, event, keys.stealthKey);
+        }
+      } catch (e: any) {
+        console.error("Signing Error:", e);
+        await wallet.respondSessionRequest({
+          topic,
+          response: { id, jsonrpc: "2.0", error: { code: 5000, message: e.message } },
+        });
       }
     });
 
@@ -267,26 +225,45 @@ export async function getWeb3Wallet(): Promise<IWeb3Wallet> {
   return walletPromise;
 }
 
+/**
+ * Disconnects all live relay sessions then calls pair().
+ * The singleton itself is kept alive — its IndexedDB keys remain valid.
+ */
+export async function prepareForPairing(): Promise<IWeb3Wallet> {
+  const wallet = await getWeb3Wallet();
+
+  const sessions = wallet.getActiveSessions();
+  const topics   = Object.keys(sessions);
+  if (topics.length > 0) {
+    console.log("[Nyra] prepareForPairing — closing", topics.length, "session(s)");
+    await Promise.all(
+      topics.map((topic) =>
+        wallet
+          .disconnectSession({ topic, reason: { code: 6000, message: "Session replaced" } })
+          .catch(() => {})
+      )
+    );
+  }
+
+  console.log("[Nyra] prepareForPairing — ready ✓");
+  return wallet;
+}
+
 export async function disconnectAllSessions(): Promise<void> {
-  // Close active sessions on the relay — fire-and-forget, no timeout needed.
-  // We deliberately do NOT null walletPromise or purge IndexedDB.
-  // The singleton must stay alive so session_proposal always fires on the
-  // same instance that has the registered listener.
-  // Destroying and recreating the singleton is what causes "No matching key".
+  if (!walletPromise) return;
   try {
-    if (!walletPromise) return;
-    const wallet = await Promise.race([
-      walletPromise,
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000)),
-    ]);
+    const wallet   = await walletPromise;
     const sessions = wallet.getActiveSessions();
     console.log("[Nyra] disconnectAllSessions — closing", Object.keys(sessions).length, "session(s)");
-    Object.keys(sessions).forEach((topic) => {
-      wallet.disconnectSession({ topic, reason: { code: 6000, message: "Session replaced" } })
-        .catch(() => {});
-    });
+    await Promise.all(
+      Object.keys(sessions).map((topic) =>
+        wallet
+          .disconnectSession({ topic, reason: { code: 6000, message: "Session replaced" } })
+          .catch(() => {})
+      )
+    );
   } catch (e) {
-    console.warn("[Nyra] disconnectAllSessions — wallet not reachable:", e);
+    console.warn("[Nyra] disconnectAllSessions:", e);
   }
   console.log("[Nyra] disconnectAllSessions — complete");
 }
@@ -295,23 +272,17 @@ export async function disconnectAllSessions(): Promise<void> {
 // HANDLERS
 // ─────────────────────────────────────────────────────────────
 
-async function handleSignTypedData(
-  wallet: IWeb3Wallet,
-  event: any,
-  stealthKey: string
-): Promise<void> {
+async function handleSignTypedData(wallet: IWeb3Wallet, event: any, stealthKey: string): Promise<void> {
   const { topic, id, params } = event;
   try {
     const account = privateKeyToAccount(ensure0x(stealthKey));
-    const client = createWalletClient({ account, chain: arbitrum, transport: http(RPC_URL) });
+    const client  = createWalletClient({ account, chain: arbitrum, transport: http(RPC_URL) });
 
     const rawParams: [string, string] = params.request.params;
     const typedDataRaw =
-      typeof rawParams[0] === "string" && rawParams[0].startsWith("{")
-        ? rawParams[0]
-        : rawParams[1];
+      typeof rawParams[0] === "string" && rawParams[0].startsWith("{") ? rawParams[0] : rawParams[1];
 
-    const parsed = typeof typedDataRaw === "string" ? JSON.parse(typedDataRaw) : typedDataRaw;
+    const parsed                              = typeof typedDataRaw === "string" ? JSON.parse(typedDataRaw) : typedDataRaw;
     const { EIP712Domain: _removed, ...types } = parsed.types ?? {};
 
     const domain = {
@@ -326,7 +297,7 @@ async function handleSignTypedData(
       domain,
       types,
       primaryType: parsed.primaryType,
-      message: lowercaseAddresses(parsed.message),
+      message:     lowercaseAddresses(parsed.message),
     });
 
     console.log("[Nyra] eth_signTypedData — signer:", account.address, "sig length:", signature.length);
@@ -340,23 +311,18 @@ async function handleSignTypedData(
   }
 }
 
-async function handlePersonalSign(
-  wallet: IWeb3Wallet,
-  event: any,
-  stealthKey: string
-): Promise<void> {
+async function handlePersonalSign(wallet: IWeb3Wallet, event: any, stealthKey: string): Promise<void> {
   const { topic, id, params } = event;
   try {
-    const account = privateKeyToAccount(ensure0x(stealthKey));
-    const client = createWalletClient({ account, chain: arbitrum, transport: http(RPC_URL) });
-
+    const account    = privateKeyToAccount(ensure0x(stealthKey));
+    const client     = createWalletClient({ account, chain: arbitrum, transport: http(RPC_URL) });
     const rawParams: [string, string] = params.request.params;
     const method: string = params.request.method;
-    let hexMessage = ensure0x(method === "eth_sign" ? rawParams[1] : rawParams[0]);
+    const hexMessage = ensure0x(method === "eth_sign" ? rawParams[1] : rawParams[0]);
 
     let signature: string;
     try {
-      const decoded = Buffer.from(hexMessage.slice(2), "hex").toString("utf8");
+      const decoded     = Buffer.from(hexMessage.slice(2), "hex").toString("utf8");
       const isPrintable = /^[\x20-\x7E\n\r\t]*$/.test(decoded) && decoded.length > 0;
       signature = isPrintable
         ? await client.signMessage({ message: decoded })
@@ -376,23 +342,17 @@ async function handlePersonalSign(
   }
 }
 
-// Stealth address is an EOA — sends tx directly, no Safe needed.
-// The stealth address needs ETH for gas (fund via relayer / CEX withdrawal).
-async function handleSendTransaction(
-  wallet: IWeb3Wallet,
-  event: any,
-  stealthKey: string
-): Promise<void> {
+async function handleSendTransaction(wallet: IWeb3Wallet, event: any, stealthKey: string): Promise<void> {
   const { topic, id, params } = event;
   try {
     const txRequest = params.request.params[0];
-    const account = privateKeyToAccount(ensure0x(stealthKey));
-    const client = createWalletClient({ account, chain: arbitrum, transport: http(RPC_URL) });
+    const account   = privateKeyToAccount(ensure0x(stealthKey));
+    const client    = createWalletClient({ account, chain: arbitrum, transport: http(RPC_URL) });
 
     const txHash = await client.sendTransaction({
-      to: getAddress(txRequest.to),
+      to:    getAddress(txRequest.to),
       value: txRequest.value ? BigInt(txRequest.value) : 0n,
-      data: txRequest.data || "0x",
+      data:  txRequest.data || "0x",
     });
 
     console.log("[Nyra] eth_sendTransaction hash:", txHash);
@@ -416,7 +376,7 @@ function lowercaseAddresses(obj: any): any {
 }
 
 // ─────────────────────────────────────────────────────────────
-// RESET
+// FULL RESET
 // ─────────────────────────────────────────────────────────────
 export async function resetWalletConnect(): Promise<void> {
   if (typeof window === "undefined") return;
@@ -426,6 +386,8 @@ export async function resetWalletConnect(): Promise<void> {
   localStorage.removeItem("nyra_proxies");
   sessionStorage.removeItem("nyra_stealth_address");
   sessionStorage.removeItem("nyra_stealth_key");
-  await purgeWalletConnectStorage();
   window.location.reload();
 }
+
+// Stub kept for any callers that still import this name
+export async function purgeWalletConnectStorage(): Promise<void> {}

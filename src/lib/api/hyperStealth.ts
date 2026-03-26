@@ -2,7 +2,7 @@
  * lib/hyperstealthApi.ts
  *
  * Consolidated client for HyperStealth Backend and Hyperliquid Info API.
- * All backend signing uses EIP-712 with domain { name: "HyperStealth", version: "1" }.
+ * Updated to support Wagmi/Reown signing.
  */
 
 import { getAddress } from "viem";
@@ -16,19 +16,26 @@ const INFO_URL = "https://api.hyperliquid.xyz/info";
 const DOMAIN = {
   name: "HyperStealth",
   version: "1",
+  // Add chainId + verifyingContract if your backend includes them in verification
+  // chainId: 42161,
+  // verifyingContract: "0x0000000000000000000000000000000000000000", // or your contract
 } as const;
+
+/** 
+ * Type helper for the Wagmi signTypedData function 
+ * This matches the signature of signTypedDataAsync from useSignTypedData()
+ */
+export type SignTypedDataFn = (args: any) => Promise<`0x${string}`>;
 
 // ─────────────────────────────────────────────────────────────
 // INTERNAL HELPERS
 // ─────────────────────────────────────────────────────────────
 
 /** Generic POST for HyperStealth Backend */
-// 1. Update the POST helper
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // ADDED REPLACER HERE: (key, value) => ...
     body: JSON.stringify(body, (key, value) =>
       typeof value === "bigint" ? value.toString() : value
     ),
@@ -40,7 +47,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return data as T;
 }
 
-// 2. Update the fetchHL helper (just in case)
+/** Fetch from Hyperliquid Info API */
 export async function fetchHL<T = any>(type: string, payload: Record<string, any> = {}): Promise<T> {
   const response = await fetch(INFO_URL, {
     method: "POST",
@@ -53,24 +60,20 @@ export async function fetchHL<T = any>(type: string, payload: Record<string, any
   return await response.json() as T;
 }
 
-// 3. Update the signWithEOA helper (This is likely where the error triggers)
-async function signWithEOA(types: any, primaryType: string, message: any): Promise<string> {
-  if (!window.ethereum) throw new Error("No wallet detected");
-  const accounts: string[] = await window.ethereum.request({ method: "eth_requestAccounts" });
-  
-  // ADDED REPLACER HERE for typedData
-  const typedData = JSON.stringify({
-    domain: DOMAIN,
-    types: { EIP712Domain: [{ name: "name", type: "string" }, { name: "version", type: "string" }], ...types },
+// inside hyperstealthApi.ts
+
+async function signWithWagmi(
+  signer: SignTypedDataFn,
+  types: any,
+  primaryType: string,
+  message: any
+): Promise<string> {
+  const { EIP712Domain, ...cleanTypes } = types;
+  return await signer({
+    domain: DOMAIN,           // { name: "HyperStealth", version: "1" }
+    types: cleanTypes,                  // ← pass the original types (do not strip EIP712Domain)
     primaryType,
     message,
-  }, (key, value) =>
-    typeof value === "bigint" ? value.toString() : value
-  );
-
-  return await window.ethereum.request({ 
-    method: "eth_signTypedData_v4", 
-    params: [accounts[0], typedData] 
   });
 }
 
@@ -83,16 +86,11 @@ async function get<T>(path: string): Promise<T> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// STORAGE HELPERS
+// TYPES & STORAGE HELPERS (Unchanged)
 // ─────────────────────────────────────────────────────────────
-
 export const getStoredEOA = () => sessionStorage.getItem("nyra_eoa") ?? localStorage.getItem("nyra_eoa") ?? null;
 export const getStoredStealthKey = () => sessionStorage.getItem("nyra_stealth_key") ?? localStorage.getItem("nyra_stealth_key") ?? null;
 export const getStoredStealthAddress = () => sessionStorage.getItem("nyra_stealth_address") ?? localStorage.getItem("nyra_active_stealth") ?? null;
-
-// ─────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────
 
 export interface HealthResponse { status: string; service: string; timestamp: string; centralWallet: string; }
 export interface RegisterResponse { success: boolean; spendPubKey: string; viewPubKey: string; stealthAddresses: string[]; }
@@ -101,27 +99,35 @@ export interface DeriveKeyResponse { success: boolean; stealthAddress: string; s
 export interface StealthAddressEntry { address: string; createdAt: number; }
 export interface StealthAddressesResponse { success: boolean; recipientAddress: string; stealthAddresses: StealthAddressEntry[]; count: number; }
 export interface DepositResponse { success: boolean; txHash: string; }
-// Bridge & Balance Types
 export interface BalanceResponse { success: boolean; userAddress: string; stealthAddress: string; deposited: string; credited: string; available: string; }
 export interface BridgeQuoteResponse { success: boolean; amount: string; minReceived: string; nativeFee: string; lzTokenFee: string; }
 export interface BridgeActionResponse { success: boolean; txHash: string; dstTxHash: string; lzStatus: string; deposited: string; }
 export interface BridgeStatusResponse { success: boolean; txHash: string; dstTxHash: string; status: "PENDING" | "INFLIGHT" | "DELIVERED" | "FAILED"; }
+export interface WithdrawResponse { success: boolean; txHash?: string; }
 
 // ─────────────────────────────────────────────────────────────
 // HYPERSTEALTH BACKEND API METHODS
 // ─────────────────────────────────────────────────────────────
 
-/** GET /health */
 export const apiHealth = () => get<HealthResponse>("/health");
 
 /** POST /register */
-export async function apiRegister(eoaAddress: string): Promise<RegisterResponse> {
-  const signature = await signWithEOA(
-    { Register: [{ name: "signer", type: "address" }] },
+export async function apiRegister(eoaAddress: string, signer: SignTypedDataFn): Promise<RegisterResponse> {
+  const cleanAddress = getAddress(eoaAddress);
+
+  const signature = await signWithWagmi(
+    signer,
+    { 
+      Register: [{ name: "signer", type: "address" }] 
+    },
     "Register",
-    { signer: getAddress(eoaAddress) }
+    { signer: cleanAddress }
   );
-  return post<RegisterResponse>("/register", { recipientAddress: getAddress(eoaAddress), signature });
+
+  return post<RegisterResponse>("/register", { 
+    recipientAddress: cleanAddress, 
+    signature 
+  });
 }
 
 /** POST /generate-address */
@@ -129,8 +135,9 @@ export const apiGenerateAddress = (eoaAddress: string) =>
   post<GenerateAddressResponse>("/generate-address", { recipientAddress: getAddress(eoaAddress) });
 
 /** POST /derive-key */
-export async function apiDeriveKey(eoaAddress: string, stealthAddress: string): Promise<DeriveKeyResponse> {
-  const signature = await signWithEOA(
+export async function apiDeriveKey(eoaAddress: string, stealthAddress: string, signer: SignTypedDataFn): Promise<DeriveKeyResponse> {
+  const signature = await signWithWagmi(
+    signer,
     { DeriveKey: [{ name: "recipientAddress", type: "address" }, { name: "stealthAddress", type: "address" }] },
     "DeriveKey",
     { recipientAddress: getAddress(eoaAddress), stealthAddress: getAddress(stealthAddress) }
@@ -139,8 +146,9 @@ export async function apiDeriveKey(eoaAddress: string, stealthAddress: string): 
 }
 
 /** POST /stealth-addresses */
-export async function apiStealthAddresses(eoaAddress: string): Promise<StealthAddressesResponse> {
-  const signature = await signWithEOA(
+export async function apiStealthAddresses(eoaAddress: string, signer: SignTypedDataFn): Promise<StealthAddressesResponse> {
+  const signature = await signWithWagmi(
+    signer,
     { Register: [{ name: "signer", type: "address" }] },
     "Register",
     { signer: getAddress(eoaAddress) }
@@ -148,21 +156,10 @@ export async function apiStealthAddresses(eoaAddress: string): Promise<StealthAd
   return post<StealthAddressesResponse>("/stealth-addresses", { recipientAddress: getAddress(eoaAddress), signature });
 }
 
-// ─────────────────────────────────────────────────────────────
-// BRIDGE & BALANCE API (Horizen/Manual Flow)
-// ─────────────────────────────────────────────────────────────
-
-/** Check user balance on backend */
-export const apiGetBalance = (address: string) => 
-  get<BalanceResponse>(`/balance/${getAddress(address)}`);
-
-/** Get quote for Horizen -> Arbitrum bridge */
-export const apiQuoteBridge = (amount: string) => 
-  post<BridgeQuoteResponse>("/quote-bridge", { amount });
-
 /** Bridge USDC.e from Horizen to Arbitrum */
-export async function apiBridge(eoaAddress: string, amount: string): Promise<BridgeActionResponse> {
-  const signature = await signWithEOA(
+export async function apiBridge(eoaAddress: string, amount: string, signer: SignTypedDataFn): Promise<BridgeActionResponse> {
+  const signature = await signWithWagmi(
+    signer,
     { Bridge: [{ name: "recipientAddress", type: "address" }, { name: "amount", type: "uint256" }] }, 
     "Bridge", 
     { recipientAddress: getAddress(eoaAddress), amount: BigInt(amount) }
@@ -170,17 +167,15 @@ export async function apiBridge(eoaAddress: string, amount: string): Promise<Bri
   return post<BridgeActionResponse>("/bridge", { recipientAddress: getAddress(eoaAddress), amount, signature });
 }
 
-/** Check status of a bridge transaction */
-export const apiGetBridgeStatus = (txHash: string) => 
-  get<BridgeStatusResponse>(`/bridge-status/${txHash}`);
-
-/** POST /deposit (EOA signs EIP-712, server derives stealth key for permit) */
+/** POST /deposit */
 export async function apiDeposit(
   eoaAddress: string,
   stealthAddress: string,
   amount: string,
+  signer: SignTypedDataFn
 ): Promise<DepositResponse> {
-  const signature = await signWithEOA(
+  const signature = await signWithWagmi(
+    signer,
     { Deposit: [{ name: "stealthAddress", type: "address" }, { name: "amount", type: "uint256" }] },
     "Deposit",
     { stealthAddress: getAddress(stealthAddress), amount: BigInt(amount) }
@@ -193,16 +188,16 @@ export async function apiDeposit(
   });
 }
 
-export interface WithdrawResponse { success: boolean; txHash?: string; }
-
-/** POST /withdraw (EOA signs EIP-712, server derives stealth key for HL withdraw3) */
+/** POST /withdraw */
 export async function apiWithdraw(
   eoaAddress: string,
   stealthAddress: string,
   destination: string,
   amount: string,
+  signer: SignTypedDataFn
 ): Promise<WithdrawResponse> {
-  const signature = await signWithEOA(
+  const signature = await signWithWagmi(
+    signer,
     { Withdraw: [
       { name: "stealthAddress", type: "address" },
       { name: "destination", type: "address" },
@@ -220,29 +215,18 @@ export async function apiWithdraw(
   });
 }
 
-
 // ─────────────────────────────────────────────────────────────
-// HYPERLIQUID INFO API METHODS (External)
+// REMAINING UTILS (Unchanged)
 // ─────────────────────────────────────────────────────────────
+export const apiGetBalance = (address: string) => get<BalanceResponse>(`/balance/${getAddress(address)}`);
+export const apiQuoteBridge = (amount: string) => post<BridgeQuoteResponse>("/quote-bridge", { amount });
+export const apiGetBridgeStatus = (txHash: string) => get<BridgeStatusResponse>(`/bridge-status/${txHash}`);
 
-/** Get metadata for all coins */
 export const getHLMeta = () => fetchHL("meta");
-
-/** Get mid prices for all coins */
 export const getHLAllMids = () => fetchHL("allMids");
-
-/** Get user account summary (Positions, Margin) */
 export const getHLUserState = (user: string) => fetchHL("clearinghouseState", { user: getAddress(user) });
-
-/** Get user open orders */
 export const getHLOpenOrders = (user: string) => fetchHL("openOrders", { user: getAddress(user) });
-
-/** Get user fills/trade history */
 export const getHLUserFills = (user: string) => fetchHL("userFills", { user: getAddress(user) });
-
-// ─────────────────────────────────────────────────────────────
-// FORMATTERS
-// ─────────────────────────────────────────────────────────────
 
 export const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 export const numFmt = (val: string | number): string => {
