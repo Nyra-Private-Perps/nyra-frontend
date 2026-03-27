@@ -3,12 +3,11 @@
   publish = "dist"
   functions = "netlify/functions"
 
-  [[redirects]]
+[[redirects]]
   from = "/api/*"
-  to = "https://api.nyra.trade"
+  to = "https://api.nyra.trade/:splat"
   status = 200
   force = true
-
 
 [[redirects]]
   from = "/*"
