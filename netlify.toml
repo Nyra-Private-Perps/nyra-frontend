@@ -1,13 +1,13 @@
 [build]
   command = "npm run build"
   publish = "dist"
-  functions = "netlify/functions"
 
 [[redirects]]
   from = "/api/*"
   to = "https://api.nyra.trade/:splat"
   status = 200
   force = true
+  headers = {X-From = "Netlify"}
 
 [[redirects]]
   from = "/*"
