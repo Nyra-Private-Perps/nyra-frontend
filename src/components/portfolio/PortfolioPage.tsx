@@ -78,7 +78,6 @@ export default function PortfolioPage({ onNavigate }: { onNavigate: (page: any) 
   });
   const [phase, setPhase] = useState<'idle' | 'auth' | 'streaming' | 'done' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [expandedSection, setExpandedSection] = useState<'history' | 'nodes' | null>('history');
   const [hideEmpty, setHideEmpty] = useState(true);
   const abortRef = useRef(false);
 

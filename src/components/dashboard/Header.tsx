@@ -36,9 +36,7 @@ const isWrongNetwork = currentPage === 'portfolio' ? !isArbitrum : (!isArbitrum 
             onClick={() => onNavigate('dashboard')}
           >
             <div className="relative">
-              <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20 group-hover:border-indigo-500/40 transition-all">
-                <Shield className="w-5 h-5 text-indigo-400" />
-              </div>
+             
               {/* Active Signal Pulse */}
               <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-[#12141B] animate-pulse" />
             </div>

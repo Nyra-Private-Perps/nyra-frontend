@@ -62,6 +62,10 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [hlConnected, setHlConnected] = useState(false);
   const directConnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Bridge step state — drives the step UI in the BRIDGE tab
+  const [bridgePhase, setBridgePhase] = useState<'idle'|'switching'|'approving'|'bridging'|'waiting'|'done'|'error'>('idle');
+  const [bridgeError, setBridgeError] = useState<string | null>(null);
+
   // ── KEY FIX: use a ref to track whether we already showed the signing view
   // to prevent the listener firing multiple times or racing with view state
   const signingHandledRef = useRef(false);
@@ -89,7 +93,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         } catch {}
         return { num: i + 1, address: s.address, connected, balance, pnl };
       }));
-      console.log(list,"list")
       setProxies(list);
       const bal = await apiGetBalance(eoa);
       setServerBalance(bal.available);
@@ -114,11 +117,18 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   // SIGNING_REQUIRED immediately, with no batching deferral possible.
   const signingActiveRef = useRef(false);
 
+  // Keep a ref to selectedProxy so the listener can check it without stale closure
+  const selectedProxyRef = useRef<Proxy | null>(null);
+  useEffect(() => { selectedProxyRef.current = selectedProxy; }, [selectedProxy]);
+
   useEffect(() => {
     const unsubscribe = onPendingRequest((req: any) => {
+      // Only handle this request in DashboardLayout if the terminal pane is open.
+      // If selectedProxy is null (user on portfolio page, or terminal closed),
+      // do nothing — GlobalSigningModal in App.tsx will catch it instead.
       if (req) {
-        // If walletController couldn't find keys, show error instead of sign modal
         if (req.missingKeys) {
+          if (!selectedProxyRef.current) return; // let global modal handle
           console.error("[Terminal] Missing stealth keys — cannot sign");
           flushSync(() => {
             setError("Stealth key not found. Please recreate this proxy.");
@@ -127,6 +137,13 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           });
           return;
         }
+
+        // If terminal is not open, let the global modal handle it
+        if (!selectedProxyRef.current) {
+          console.log("[Terminal] No proxy selected — deferring to GlobalSigningModal");
+          return;
+        }
+
         console.log("[Terminal] ✓ Pending request received:", req.method);
         signingActiveRef.current = true;
         signingHandledRef.current = false;
@@ -144,7 +161,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       }
     });
     return () => unsubscribe();
-  }, []); // safe with flushSync — no stale closure risk on refs
+  }, []); // safe with flushSync — selectedProxy accessed via ref, never stale
 
   const handleSwitchToPA = async () => {
     setActiveTab('PA');
@@ -159,23 +176,53 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     }
   };
 
-  const handleAction = async (type: 'BRIDGE' | 'DEPOSIT' | 'CONNECT' | 'WITHDRAW') => {
+  // ── Bridge handler — step-by-step, no overlay HUD ──
+  const handleBridge = async () => {
+    setBridgePhase('switching');
+    setBridgeError(null);
+    try {
+      const rawAmount = parseUnits(amount, 6).toString();
+
+      // Step 1: Switch to Horizen
+      setBridgePhase('switching');
+      await switchChainNetwork(26514);
+
+      // Step 2: Approve token spend
+      setBridgePhase('approving');
+      await approveToken(
+        "0xDF7108f8B10F9b9eC1aba01CCa057268cbf86B6c",
+        "0xFB3fF1767A0a6c0d3b5fE61882B1460458372FCF",
+        rawAmount
+      );
+
+      // Step 3: Submit bridge tx
+      setBridgePhase('bridging');
+      const res = await apiBridge(address!, rawAmount, signTypedDataAsync);
+
+      // Step 4: Wait for delivery
+      setBridgePhase('waiting');
+      let delivered = false;
+      while (!delivered) {
+        const s = await apiGetBridgeStatus(res.txHash);
+        if (s.status === "DELIVERED") delivered = true;
+        else if (s.status === "FAILED") throw new Error("Bridge transaction failed on-chain");
+        else await new Promise(r => setTimeout(r, 3000));
+      }
+
+      // Done
+      setBridgePhase('done');
+      await loadData(); // refresh server balance
+    } catch (e: any) {
+      setBridgeError(e.message || "Bridge failed");
+      setBridgePhase('error');
+    }
+  };
+
+  const handleAction = async (type: 'DEPOSIT' | 'CONNECT' | 'WITHDRAW') => {
     setTxStatus('PROCESSING');
     setError(null);
     try {
-      if (type === 'BRIDGE') {
-        const rawAmount = parseUnits(amount, 6).toString();
-        await switchChainNetwork(26514);
-        await approveToken("0xDF7108f8B10F9b9eC1aba01CCa057268cbf86B6c", "0xFB3fF1767A0a6c0d3b5fE61882B1460458372FCF", rawAmount);
-        const res = await apiBridge(address!, rawAmount, signTypedDataAsync);
-        let done = false;
-        while (!done) {
-          const s = await apiGetBridgeStatus(res.txHash);
-          if (s.status === "DELIVERED") done = true;
-          else if (s.status === "FAILED") throw new Error("Bridge failed");
-          else await new Promise(r => setTimeout(r, 3000));
-        }
-      } else if (type === 'DEPOSIT' && selectedProxy) {
+      if (type === 'DEPOSIT' && selectedProxy) {
         await apiDeposit(address!, selectedProxy.address, serverBalance, signTypedDataAsync);
       } else if (type === 'WITHDRAW' && selectedProxy) {
         await apiWithdraw(address!, selectedProxy.address, destination, parseUnits(amount, 6).toString(), signTypedDataAsync);
@@ -288,8 +335,11 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               // No signing request came — HL connected directly without auth
               console.log("[Terminal] HL connected without auth request — session active ✓");
               setHlConnected(true);
+              // Clear connected on ALL proxies except this one
               setProxies(prev => prev.map(p =>
-                p.address === selectedProxy.address ? { ...p, connected: true } : p
+                p.address === selectedProxy.address
+                  ? { ...p, connected: true }
+                  : { ...p, connected: false }
               ));
               setSelectedProxy(prev => prev ? { ...prev, connected: true } : prev);
               setConnectStep('success');
@@ -393,9 +443,11 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     setTimeout(() => {
       setConnectStep('idle');
       setHlConnected(true);
-      // Mark proxy as connected in both list and selectedProxy
+      // Mark ONLY this proxy as connected, clear all others
       setProxies(prev => prev.map(p =>
-        p.address === selectedProxy?.address ? { ...p, connected: true } : p
+        p.address === selectedProxy?.address
+          ? { ...p, connected: true }
+          : { ...p, connected: false }
       ));
       setSelectedProxy(prev => prev ? { ...prev, connected: true } : prev);
       setView('ACTIONS');
@@ -434,23 +486,112 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           </div>
 
           {/* 2. EXPLORER */}
-          <div className="flex-1 p-10 flex flex-col">
+          <div className="flex-1 p-10 flex flex-col overflow-y-auto min-h-0">
             <AnimatePresence mode="wait">
               {activeTab === 'BRIDGE' ? (
-                <motion.div key="bridge" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-8">
+                <motion.div key="bridge" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-5">
                   <div className="space-y-2">
                     <h2 className="text-2xl font-black italic uppercase tracking-tighter">Funding</h2>
                     <p className="text-[10px] text-white/30 font-mono tracking-widest uppercase">Protocol: Stargate V2 Cross-Chain</p>
                   </div>
-                  <div className="bg-black/30 p-8 rounded-[32px] border border-white/5 space-y-6">
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">Deposit Amount</label>
-                      <Input value={amount} onChange={e => setAmount(e.target.value)} className="h-14 bg-transparent border-none text-3xl font-bold p-0 focus-visible:ring-0" />
+
+                  {/* BRIDGE: input form */}
+                  {bridgePhase === 'idle' || bridgePhase === 'error' ? (
+                    <div className="bg-black/30 p-8 rounded-[32px] border border-white/5 space-y-6">
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">Amount (USDC.e)</label>
+                        <Input value={amount} onChange={e => setAmount(e.target.value)} className="h-14 bg-transparent border-none text-3xl font-bold p-0 focus-visible:ring-0" />
+                        <p className="text-[10px] text-white/20 font-mono">Bridge from Horizen EON → Arbitrum. Takes 2–5 min.</p>
+                      </div>
+                      {bridgePhase === 'error' && (
+                        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-red-500/8 border border-red-500/20">
+                          <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+                          <p className="text-[10px] text-red-400 font-mono">{bridgeError}</p>
+                        </div>
+                      )}
+                      <Button
+                        onClick={handleBridge}
+                        className="w-full h-16 rounded-[24px] bg-white text-black font-black uppercase text-xs tracking-widest hover:bg-neutral-200 transition-all"
+                      >
+                        Bridge Liquidity
+                      </Button>
                     </div>
-                    <Button onClick={() => handleAction('BRIDGE')} className="w-full h-16 rounded-[24px] bg-white text-black font-black uppercase text-xs tracking-widest hover:bg-neutral-200 transition-all">
-                      Bridge Liquidity
-                    </Button>
-                  </div>
+                  ) : bridgePhase === 'done' ? (
+                    /* ── BRIDGE SUCCESS ── */
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+                      className="bg-black/30 p-8 rounded-[32px] border border-emerald-500/20 space-y-6 text-center"
+                    >
+                      <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center bg-emerald-500/10 border border-emerald-500/20">
+                        <Check size={28} className="text-emerald-400" />
+                      </div>
+                      <div>
+                        <h3 className="font-black italic uppercase tracking-tighter text-lg mb-2">Bridge Complete</h3>
+                        <p className="text-[11px] text-white/40 font-mono leading-relaxed">
+                          Funds delivered to server balance.<br />
+                          You can now deposit to any proxy account.
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => { setBridgePhase('idle'); setBridgeError(null); }}
+                        className="w-full h-12 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-black uppercase text-[10px] tracking-widest"
+                      >
+                        Bridge More
+                      </Button>
+                    </motion.div>
+                  ) : (
+                    /* ── BRIDGE STEPS ── */
+                    <div className="bg-black/30 p-5 rounded-[32px] border border-white/5 space-y-3">
+                      <div className="text-center mb-1">
+                        <p className="text-[10px] font-mono text-white/30 uppercase tracking-widest">Cross-chain transfer in progress</p>
+                        <p className="text-[9px] font-mono text-white/15 mt-1">Do not close this window</p>
+                      </div>
+
+                      {/* Step list */}
+                      {[
+                        { id: 'switching',  label: 'Switch Network',        desc: 'Connecting to Horizen EON' },
+                        { id: 'approving',  label: 'Approve Token Spend',   desc: 'Sign approval in wallet' },
+                        { id: 'bridging',   label: 'Submit Bridge Tx',      desc: 'Confirm transaction in wallet' },
+                        { id: 'waiting',    label: 'Waiting for Delivery',  desc: 'Cross-chain relay in progress (~2–5 min)' },
+                      ].map((step, i) => {
+                        const phases = ['switching', 'approving', 'bridging', 'waiting', 'done'];
+                        const currentIdx = phases.indexOf(bridgePhase);
+                        const stepIdx = phases.indexOf(step.id);
+                        const isDone = currentIdx > stepIdx;
+                        const isCurrent = bridgePhase === step.id;
+                        return (
+                          <div key={step.id}
+                            className={`flex items-center gap-4 p-3 rounded-2xl border transition-all duration-300 ${
+                              isCurrent ? 'bg-indigo-500/10 border-indigo-500/20' :
+                              isDone    ? 'bg-emerald-500/5 border-emerald-500/10' :
+                              'opacity-25 border-transparent'
+                            }`}>
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 border-2 ${
+                              isDone    ? 'bg-emerald-500 border-emerald-500' :
+                              isCurrent ? 'border-indigo-500 text-indigo-400' :
+                              'border-white/10 text-white/20'
+                            }`}>
+                              {isDone
+                                ? <Check size={16} className="text-black" />
+                                : isCurrent
+                                  ? <Loader2 size={16} className="animate-spin" />
+                                  : <span className="text-[11px] font-bold">{i + 1}</span>
+                              }
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-[11px] font-black uppercase tracking-widest ${isCurrent ? 'text-white' : isDone ? 'text-emerald-400' : 'text-white/20'}`}>
+                                {step.label}
+                              </p>
+                              <p className="text-[9px] font-mono text-white/25 mt-0.5 truncate">{step.desc}</p>
+                            </div>
+                            {isCurrent && bridgePhase === 'waiting' && (
+                              <span className="text-[9px] font-mono text-indigo-400 animate-pulse">~2-5 min</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </motion.div>
               ) : (
                 <motion.div key="pa" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="flex flex-col h-full">
@@ -539,16 +680,25 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                     {view === 'ACTIONS' && (
                       <motion.div key="actions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
 
-                        {/* Balance card — always visible */}
+                        {/* Balance card — HL account value for this proxy */}
                         <div className="p-6 bg-white/[0.02] border border-white/5 rounded-[32px] space-y-3">
                           <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-white/10 uppercase tracking-[0.2em]">Net Assets</span>
+                            <div>
+                              <span className="text-[10px] font-bold text-white/10 uppercase tracking-[0.2em]">HL Account Value</span>
+                              <p className="text-[8px] font-mono text-white/15 mt-0.5">This proxy on Hyperliquid</p>
+                            </div>
                             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${selectedProxy.connected ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-white/5 text-white/20 border border-white/10'}`}>
                               {selectedProxy.connected ? '● SYNCED' : '○ STANDBY'}
                             </span>
                           </div>
-                          <div className="text-4xl font-black">${Number(selectedProxy.balance).toLocaleString()}</div>
-                          <div className={`text-[10px] font-bold ${Number(selectedProxy.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{selectedProxy.pnl} PNL</div>
+                          <div className="text-4xl font-black">
+                            {Number(selectedProxy.balance) > 0 ? `$${Number(selectedProxy.balance).toLocaleString()}` : <span className="text-white/20 text-2xl">No position</span>}
+                          </div>
+                          {Number(selectedProxy.balance) > 0 && (
+                            <div className={`text-[10px] font-bold ${Number(selectedProxy.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {Number(selectedProxy.pnl) >= 0 ? '+' : ''}{selectedProxy.pnl} Unrealized PnL
+                            </div>
+                          )}
                         </div>
 
                         {selectedProxy.connected ? (
