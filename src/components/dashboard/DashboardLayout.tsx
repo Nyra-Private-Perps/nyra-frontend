@@ -69,6 +69,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   // ── KEY FIX: use a ref to track whether we already showed the signing view
   // to prevent the listener firing multiple times or racing with view state
   const signingHandledRef = useRef(false);
+  const HORIZEN_USDC_ADDRESS=(import.meta as any).env?.VITE_HORIZEN_USDC_ADDRESS
+  const CENTRAL_WALLET=(import.meta as any).env?.VITE_CENTRAL_WALLET
 
   const STEPS = [
     { id: 'signing', label: 'Authorize', desc: 'Sign secure permit' },
@@ -190,8 +192,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       // Step 2: Approve token spend
       setBridgePhase('approving');
       await approveToken(
-        "0xDF7108f8B10F9b9eC1aba01CCa057268cbf86B6c",
-        "0xFB3fF1767A0a6c0d3b5fE61882B1460458372FCF",
+        HORIZEN_USDC_ADDRESS,
+       CENTRAL_WALLET,
         rawAmount
       );
 
