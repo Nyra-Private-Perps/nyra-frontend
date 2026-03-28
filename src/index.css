@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
@@ -9,85 +9,195 @@
 
 @layer base {
   :root {
-    /* Set Root to Dark by default so there's NO white flashes when pulling */
-    --background: 240 10% 3.9%;
+    --background: 260 30% 8%;
     --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
+    --card: 260 25% 11%;
     --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
+    --popover: 260 25% 11%;
     --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
+    --primary: 270 65% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 260 20% 16%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --muted: 260 20% 16%;
+    --muted-foreground: 260 10% 55%;
+    --accent: 270 65% 58%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 50.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
-    --radius: 0.75rem;
+    --border: 260 20% 18%;
+    --input: 260 20% 16%;
+    --ring: 270 65% 58%;
+    --radius: 1rem;
   }
 
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
 
   html {
-    /* This prevents the white background when pulling on mobile/mac */
-    background-color: #08090B; 
+    background-color: #0d0a12;
     color-scheme: dark;
     -webkit-tap-highlight-color: transparent;
     scroll-behavior: smooth;
   }
 
   body {
-    @apply bg-[#08090B] text-foreground antialiased font-sans;
-    /* Prevents elastic bounce showing white in some browsers */
-    overscroll-behavior: none; 
+    @apply text-foreground antialiased;
+    /* ── EXACT JUMPER BACKGROUND ──
+       Deep near-black purple base with two radial glow blobs:
+       - Bottom-left: large vivid purple
+       - Top-right: smaller, more muted purple
+       Matches jumper.xyz precisely. */
+    background-color: #0d0a12;
+    background-image:
+      radial-gradient(ellipse 80% 60% at 5% 95%, rgba(88, 28, 180, 0.55) 0%, rgba(88, 28, 180, 0.18) 40%, transparent 70%),
+      radial-gradient(ellipse 55% 45% at 95% 5%, rgba(109, 40, 217, 0.35) 0%, rgba(76, 29, 149, 0.12) 50%, transparent 75%);
+    background-attachment: fixed;
+    font-family: 'Inter', system-ui, sans-serif;
+    overscroll-behavior: none;
+    min-height: 100vh;
   }
 }
 
-/* ─────────────────────────────────────────────────────────────
-   RIVER FLOW CUSTOM SCROLLBARS (MATCHES JUMPER)
-   ───────────────────────────────────────────────────────────── */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(168, 85, 247, 0.15); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(168, 85, 247, 0.35); }
+::selection { background: rgba(147, 51, 234, 0.35); color: white; }
+
+/* ── GLASS ── */
+.glass {
+  background: rgba(18, 12, 30, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+.glass-card {
+  background: rgba(24, 15, 42, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-  border: 2px solid transparent;
+/* Terminal pane — slightly darker */
+.glass-terminal {
+  background: rgba(14, 9, 26, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.2); /* Indigo tint on hover */
+/* ── GLOW ── */
+.glow-purple { box-shadow: 0 0 40px rgba(147, 51, 234, 0.3), 0 0 80px rgba(147, 51, 234, 0.1); }
+.glow-purple-sm { box-shadow: 0 0 20px rgba(147, 51, 234, 0.25); }
+
+/* ── GRADIENT ── */
+.bg-gradient-purple { background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%); }
+
+/* ── GRID PATTERN (very subtle) ── */
+.grid-pattern {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 
-/* Utility classes for the terminal vibe */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+/* ── CARD HOVER ── */
+.card-hover { transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease; }
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(168, 85, 247, 0.2);
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(99, 102, 241, 0.1);
+/* ── SHIMMER LOADING ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(168,85,247,0.06) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.3);
+/* ── BUTTONS ── */
+.btn-purple {
+  background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
+  transition: all 0.2s ease;
+}
+.btn-purple:hover {
+  box-shadow: 0 0 30px rgba(147, 51, 234, 0.5), 0 8px 20px rgba(0,0,0,0.3);
+  transform: translateY(-1px);
+}
+.btn-purple:active { transform: translateY(0); }
+
+.btn-ghost-purple {
+  background: rgba(147, 51, 234, 0.1);
+  border: 1px solid rgba(147, 51, 234, 0.25);
+  color: #c084fc;
+  transition: all 0.2s ease;
+}
+.btn-ghost-purple:hover {
+  background: rgba(147, 51, 234, 0.18);
+  border-color: rgba(147, 51, 234, 0.4);
 }
 
-/* Selection Highlight */
-::selection {
-  background: rgba(99, 102, 241, 0.3);
-  color: white;
+/* ── PROGRESS BAR ── */
+.progress-purple {
+  background: linear-gradient(90deg, #9333ea, #a855f7);
+  box-shadow: 0 0 12px rgba(147, 51, 234, 0.5);
+}
+
+/* ── CUSTOM SCROLLBAR ── */
+.custom-scrollbar::-webkit-scrollbar { width: 3px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(168, 85, 247, 0.15); border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(168, 85, 247, 0.35); }
+
+/* ── NEW BADGE PULSE ── */
+@keyframes new-badge-pop {
+  0%   { transform: scale(0.7); opacity: 0; }
+  60%  { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.new-badge { animation: new-badge-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+
+/* ── BALANCE REFRESH SPIN ── */
+@keyframes spin-once {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.spin-once { animation: spin-once 0.6s ease-out; }
+
+/* ── PULSE RING ── */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.4); }
+  70%  { box-shadow: 0 0 0 8px rgba(147, 51, 234, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(147, 51, 234, 0); }
+}
+.pulse-purple { animation: pulse-ring 2s infinite; }
+
+/* ── MOBILE SAFE AREAS ── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .fixed.bottom-0 {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ── MOBILE OPTIMIZATIONS ── */
+@media (max-width: 640px) {
+  /* Slightly reduce card border-radius on mobile for a cleaner look */
+  .glass-card { border-radius: 1rem; }
+
+  /* Prevent text overflow in proxy addresses */
+  .font-mono { word-break: break-all; }
+
+  /* Smooth overscroll on iOS */
+  body { -webkit-overflow-scrolling: touch; }
+
+  /* Make inputs easier to tap */
+  input, button { min-height: 40px; }
+}
+
+/* ── MOBILE SHEET BACKDROP ── */
+.mobile-sheet-backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
 }

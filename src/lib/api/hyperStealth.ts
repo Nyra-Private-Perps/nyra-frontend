@@ -27,6 +27,16 @@ const DOMAIN = {
  */
 export type SignTypedDataFn = (args: any) => Promise<`0x${string}`>;
 
+/** 
+ * Response for POST /withdraw-available 
+ */
+export interface WithdrawAvailableResponse { 
+  success: boolean; 
+  txHash?: string; 
+  message?: string; 
+}
+
+
 // ─────────────────────────────────────────────────────────────
 // INTERNAL HELPERS
 // ─────────────────────────────────────────────────────────────
@@ -183,6 +193,42 @@ export async function apiDeposit(
   return post<DepositResponse>("/deposit", {
     recipientAddress: getAddress(eoaAddress),
     stealthAddress: getAddress(stealthAddress),
+    amount,
+    signature,
+  });
+}
+
+export async function apiWithdrawAvailable(
+  eoaAddress: string,      // The signer's address (recipientAddress)
+  destination: string,     // The Arbitrum address to receive the USDC
+  amount: string,          // USDC amount in 6 decimals (atomic string)
+  signer: SignTypedDataFn  // Wagmi signTypedDataAsync
+): Promise<WithdrawAvailableResponse> {
+  
+  const cleanEoa = getAddress(eoaAddress);
+  const cleanDest = getAddress(destination);
+
+  // 1. Generate EIP-712 Signature
+  // Domain is already defined at the top of your file as { name: "HyperStealth", version: "1" }
+  const signature = await signWithWagmi(
+    signer,
+    { 
+      WithdrawAvailable: [
+        { name: "destination", type: "address" },
+        { name: "amount", type: "uint256" }
+      ] 
+    },
+    "WithdrawAvailable",
+    { 
+      destination: cleanDest, 
+      amount: BigInt(amount) 
+    }
+  );
+
+  // 2. POST to the backend
+  return post<WithdrawAvailableResponse>("/withdraw-available", {
+    recipientAddress: cleanEoa,
+    destination: cleanDest,
     amount,
     signature,
   });

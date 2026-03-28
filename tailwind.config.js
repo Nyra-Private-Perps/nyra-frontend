@@ -41,13 +41,6 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        chart: {
-          "1": "hsl(var(--chart-1))",
-          "2": "hsl(var(--chart-2))",
-          "3": "hsl(var(--chart-3))",
-          "4": "hsl(var(--chart-4))",
-          "5": "hsl(var(--chart-5))",
-        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -57,6 +50,23 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
+      },
+      backgroundOpacity: {
+        '1': '0.01',
+        '2': '0.02',
+        '3': '0.03',
+        '6': '0.06',
+        '7': '0.07',
+        '8': '0.08',
+      },
+      keyframes: {
+        'pulse-purple': {
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(147, 51, 234, 0.4)' },
+          '70%': { boxShadow: '0 0 0 8px rgba(147, 51, 234, 0)' },
+        },
+      },
+      animation: {
+        'pulse-purple': 'pulse-purple 2s infinite',
       },
     },
   },

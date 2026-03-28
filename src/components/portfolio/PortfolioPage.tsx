@@ -1,17 +1,14 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useSignTypedData } from 'wagmi';
-import { motion, AnimatePresence, useSpring, useTransform, useMotionValue, MotionValue } from 'framer-motion';
+import { motion, AnimatePresence, useSpring, useTransform, useMotionValue, type MotionValue } from 'framer-motion';
 import {
   TrendingUp, RefreshCw, AlertCircle, Loader2,
-  Activity, Target, Zap, ChevronDown,
-  Eye, EyeOff, Layers, History, ArrowDownLeft, ArrowUpRight
+  Activity, Target, Zap, Eye, EyeOff, Layers, History, ArrowDownLeft, ArrowUpRight
 } from 'lucide-react';
 import Header from '@/components/dashboard/Header';
-// Ensure getHLUserFills is exported from your hyperStealth lib
 import { apiStealthAddresses, getStoredEOA, getHLUserState, numFmt, getHLUserFills } from '@/lib/api/hyperStealth';
 
-// ─── Types ───────────────────────────────────────────────────
 interface NodeState {
   address: string;
   idx: number;
@@ -21,7 +18,7 @@ interface NodeState {
   marginUsed: number;
   withdrawable: number;
   positions: any[];
-  trades: any[]; 
+  trades: any[];
 }
 
 interface Totals {
@@ -30,66 +27,40 @@ interface Totals {
   marginUsed: number;
   withdrawable: number;
   positions: any[];
-  history: any[]; 
+  history: any[];
   loadedCount: number;
   totalCount: number;
 }
 
-// ─── Corrected Animated Counter ───────────────────────────────
-function AnimatedNumber({ value, prefix = '$', decimals = 2, className = '' }: { value: number, prefix?: string, decimals?: number, className?: string }) {
-  // Use a MotionValue as the source to avoid "overload" ambiguity
+function AnimatedNumber({ value, prefix = '$', decimals = 2, className = '' }: { value: number; prefix?: string; decimals?: number; className?: string }) {
   const mValue = useMotionValue(value);
-  
-  // Create the spring based on that motion value
   const spring = useSpring(mValue, { stiffness: 60, damping: 20 });
-  
-  // Explicitly define types for the transform to satisfy TS Overload 1 of 5
-  const display: MotionValue<string> = useTransform(spring, (latest: number): string => {
-    return `${prefix}${Math.abs(latest).toLocaleString('en-US', { 
-      minimumFractionDigits: decimals, 
-      maximumFractionDigits: decimals 
-    })}`;
-  });
-
+  const display: MotionValue<string> = useTransform(spring, (latest: number): string =>
+    `${prefix}${Math.abs(latest).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
+  );
   const [text, setText] = useState<string>(display.get());
-
-  // Update motion value when prop changes
-  useEffect(() => {
-    mValue.set(value);
-  }, [value, mValue]);
-
-  // Subscribe to changes
-  useEffect(() => {
-    return display.on('change', (latestValue: string) => setText(latestValue));
-  }, [display]);
-
+  useEffect(() => { mValue.set(value); }, [value, mValue]);
+  useEffect(() => display.on('change', (v: string) => setText(v)), [display]);
   return <span className={className}>{text}</span>;
 }
 
-// ─── Main Component ───────────────────────────────────────────
 export default function PortfolioPage({ onNavigate }: { onNavigate: (page: any) => void }) {
   const { address } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
 
   const [nodes, setNodes] = useState<NodeState[]>([]);
-  const [totals, setTotals] = useState<Totals>({ 
-    accountValue: 0, unrealizedPnl: 0, marginUsed: 0, withdrawable: 0, 
-    positions: [], history: [], loadedCount: 0, totalCount: 0 
+  const [totals, setTotals] = useState<Totals>({
+    accountValue: 0, unrealizedPnl: 0, marginUsed: 0, withdrawable: 0,
+    positions: [], history: [], loadedCount: 0, totalCount: 0,
   });
   const [phase, setPhase] = useState<'idle' | 'auth' | 'streaming' | 'done' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [hideEmpty, setHideEmpty] = useState(true);
   const abortRef = useRef(false);
 
-  // Aggregation Logic: Merges data from all nodes into global metrics
   const recomputeTotals = useCallback((nodeList: NodeState[], total: number) => {
     const loaded = nodeList.filter(n => n.status === 'loaded');
-    
-    // AGGREGATED TRADE HISTORY: Combine all trades from all nodes and sort by time
-    const allHistory = loaded
-      .flatMap(n => n.trades)
-      .sort((a, b) => (b.time || 0) - (a.time || 0));
-
+    const allHistory = loaded.flatMap(n => n.trades).sort((a, b) => (b.time || 0) - (a.time || 0));
     setTotals({
       accountValue: loaded.reduce((s, n) => s + n.accountValue, 0),
       unrealizedPnl: loaded.reduce((s, n) => s + n.unrealizedPnl, 0),
@@ -107,55 +78,33 @@ export default function PortfolioPage({ onNavigate }: { onNavigate: (page: any) 
     setPhase('auth');
     setError(null);
     setNodes([]);
-    
     const eoa = getStoredEOA() || address;
-    if (!eoa || !signTypedDataAsync) { 
-        setError('Wallet not connected'); 
-        setPhase('error'); 
-        return; 
-    }
-
+    if (!eoa || !signTypedDataAsync) { setError('Wallet not connected'); setPhase('error'); return; }
     try {
       const registry = await apiStealthAddresses(eoa, signTypedDataAsync);
       const addresses: string[] = registry.stealthAddresses.map((s: any) => s.address);
-      
-      if (!addresses.length) { 
-        setError('No stealth identities in registry'); 
-        setPhase('error'); 
-        return; 
-      }
+      if (!addresses.length) { setError('No stealth identities in registry'); setPhase('error'); return; }
 
-      // Initialize skeletons
       const initial: NodeState[] = addresses.map((addr, idx) => ({
         address: addr, idx, status: 'pending',
-        accountValue: 0, unrealizedPnl: 0, marginUsed: 0, withdrawable: 0, positions: [], trades: []
+        accountValue: 0, unrealizedPnl: 0, marginUsed: 0, withdrawable: 0, positions: [], trades: [],
       }));
       setNodes(initial);
       setPhase('streaming');
 
-      // Concurrent fetcher
-      let finishedCount = 0;
-      const concurrency = 6;
       let i = 0;
-
-      const workers = Array.from({ length: Math.min(concurrency, addresses.length) }, async () => {
+      const workers = Array.from({ length: Math.min(6, addresses.length) }, async () => {
         while (i < addresses.length && !abortRef.current) {
           const idx = i++;
           const addr = addresses[idx];
           try {
-            // Fetch both state and individual trade history for this specific node
-            const [state, fills] = await Promise.all([
-              getHLUserState(addr),
-              getHLUserFills(addr)
-            ]);
-
+            const [state, fills] = await Promise.all([getHLUserState(addr), getHLUserFills(addr)]);
             const summary = state?.marginSummary;
             const nodePositions = (state?.assetPositions ?? [])
               .filter((p: any) => Number(p.position?.szi) !== 0)
               .map((p: any) => ({ ...p.position, parentProxy: addr }));
-
             const result: NodeState = {
-              address: addr, idx, 
+              address: addr, idx,
               status: (summary || fills?.length) ? 'loaded' : 'empty',
               accountValue: Number(summary?.accountValue ?? 0),
               unrealizedPnl: Number(summary?.unrealizedPnl ?? 0),
@@ -164,19 +113,15 @@ export default function PortfolioPage({ onNavigate }: { onNavigate: (page: any) 
               positions: nodePositions,
               trades: (fills ?? []).map((f: any) => ({ ...f, parentProxy: addr })),
             };
-
             setNodes(prev => {
               const next = [...prev];
               next[idx] = result;
               recomputeTotals(next, addresses.length);
               return next;
             });
-          } catch (e) {
-            console.error(`Error loading node ${addr}`, e);
-          }
+          } catch (e) { console.error(`Error loading node ${addr}`, e); }
         }
       });
-
       await Promise.all(workers);
       if (!abortRef.current) setPhase('done');
     } catch (err: any) {
@@ -188,119 +133,285 @@ export default function PortfolioPage({ onNavigate }: { onNavigate: (page: any) 
   useEffect(() => { load(); return () => { abortRef.current = true; }; }, [address]);
 
   const displayNodes = hideEmpty ? nodes.filter(n => n.status !== 'empty') : nodes;
+  const isLoading = phase === 'auth' || phase === 'streaming';
+
+  const metrics = [
+    { label: 'Total Value', value: totals.accountValue, icon: <TrendingUp size={16} />, prefix: '$', decimals: 2, color: 'text-white' },
+    { label: 'Net PnL', value: totals.unrealizedPnl, icon: <Activity size={16} />, prefix: '', decimals: 2, color: totals.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400' },
+    { label: 'Active Nodes', value: nodes.filter(n => n.status === 'loaded').length, icon: <Target size={16} />, prefix: '', decimals: 0, color: 'text-purple-400' },
+    { label: 'Total Trades', value: totals.history.length, icon: <History size={16} />, prefix: '', decimals: 0, color: 'text-white' },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#07080C] text-white overflow-x-hidden">
+    <div className="min-h-screen text-white overflow-x-hidden relative" style={{ background: '#0d0a12' }}>
+      {/* Background */}
+      <div className="fixed inset-0 pointer-events-none">
+        <motion.div
+          className="absolute top-0 right-1/3 w-[500px] h-[500px] rounded-full bg-purple-600/8 blur-[140px]"
+          animate={{ scale: [1, 1.1, 1], opacity: [0.08, 0.13, 0.08] }}
+          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <div className="absolute inset-0 grid-pattern" />
+      </div>
+
       <Header onNavigate={onNavigate} currentPage="portfolio" />
 
-      <main className="relative max-w-6xl mx-auto px-6 py-10 mt-16 space-y-10">
-        
-        {/* Top Header Section */}
-        <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-6">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <Layers size={15} className="text-indigo-400" />
-              <span className="text-[10px] font-mono uppercase tracking-[0.25em] text-white/30">Aggregated Stealth Network</span>
-            </div>
-            <h1 className="text-4xl font-black italic uppercase tracking-tighter">Global Ledger</h1>
-          </div>
-          
-          <button onClick={load} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-indigo-500 hover:bg-indigo-600 font-bold text-[11px] uppercase tracking-widest">
-            {phase === 'streaming' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Sync Network
-          </button>
-        </div>
+      <main className="relative z-10 max-w-6xl mx-auto px-3 sm:px-6 pt-20 sm:pt-24 pb-16 space-y-6 sm:space-y-8">
 
-        {/* AGGREGATED METRICS */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: 'Total Value', value: totals.accountValue, icon: <TrendingUp size={18} /> },
-            { label: 'Net PnL', value: totals.unrealizedPnl, icon: <Activity size={18} />, color: totals.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400' },
-            { label: 'Active Nodes', value: nodes.filter(n => n.status === 'loaded').length, icon: <Target size={18} />, prefix: '', decimals: 0 },
-            { label: 'Total Trades', value: totals.history.length, icon: <History size={18} />, prefix: '', decimals: 0 },
-          ].map((m, i) => (
-            <motion.div key={m.label} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-              className="bg-white/[0.03] border border-white/10 rounded-[28px] p-6">
-              <div className="flex justify-between mb-4 text-[10px] font-black uppercase text-white/20 tracking-widest">
-                {m.label} <div className="text-indigo-400">{m.icon}</div>
+        {/* Page Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+        >
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <Layers size={14} className="text-purple-400" />
+              <span className="text-xs text-gray-500 font-medium uppercase tracking-wider">Aggregated Stealth Network</span>
+            </div>
+            <h1 className="text-3xl font-bold text-white">Global Ledger</h1>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {isLoading && (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/8 border border-purple-500/20">
+                <Loader2 size={13} className="text-purple-400 animate-spin" />
+                <span className="text-xs text-purple-400">
+                  {phase === 'auth' ? 'Authenticating...' : `Scanning ${totals.loadedCount}/${totals.totalCount} nodes`}
+                </span>
               </div>
-              <AnimatedNumber value={m.value} prefix={m.prefix} decimals={m.decimals} className={`text-2xl font-black ${m.color || 'text-white'}`} />
+            )}
+            <motion.button
+              onClick={load}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full btn-purple text-white text-sm font-medium disabled:opacity-50"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              {isLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              Sync
+            </motion.button>
+          </div>
+        </motion.div>
+
+        {/* Error state */}
+        <AnimatePresence>
+          {phase === 'error' && error && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="flex items-center gap-3 px-5 py-4 rounded-2xl bg-red-500/8 border border-red-500/20"
+            >
+              <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
+              <p className="text-sm text-red-400">{error}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Metric Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {metrics.map((m, i) => (
+            <motion.div
+              key={m.label}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.06, duration: 0.4 }}
+              className="glass-card rounded-2xl p-5 card-hover"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-gray-600 font-medium">{m.label}</span>
+                <div className="text-purple-400/60">{m.icon}</div>
+              </div>
+              {isLoading && m.value === 0 ? (
+                <div className="h-7 w-24 rounded-lg shimmer" />
+              ) : (
+                <AnimatedNumber
+                  value={m.value}
+                  prefix={m.prefix}
+                  decimals={m.decimals}
+                  className={`text-2xl font-semibold ${m.color}`}
+                />
+              )}
             </motion.div>
           ))}
         </div>
 
-        {/* AGGREGATED TRADE HISTORY TABLE */}
-        <div className="bg-[#0D0E14] border border-white/5 rounded-[32px] overflow-hidden">
-          <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <History size={18} className="text-indigo-400" />
-              <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/40">Aggregated History (All Nodes)</span>
+        {/* Positions */}
+        {totals.positions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
+            className="glass-card rounded-2xl overflow-hidden"
+          >
+            <div className="px-6 py-4 border-b border-white/5 flex items-center gap-3">
+              <Zap size={15} className="text-purple-400" />
+              <span className="text-sm font-medium text-gray-300">Open Positions</span>
+              <span className="ml-auto text-xs text-gray-600">{totals.positions.length} active</span>
             </div>
-            <span className="text-[10px] font-mono text-white/20">{totals.history.length} Fills across network</span>
+            <div className="overflow-x-auto -mx-0">
+              <table className="w-full text-left min-w-[480px]">
+                <thead>
+                  <tr className="border-b border-white/5">
+                    {['Asset', 'Size', 'Entry', 'PnL', 'Node'].map(h => (
+                      <th key={h} className="px-4 sm:px-6 py-3 text-[10px] font-semibold text-gray-600 uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {totals.positions.map((pos: any, i: number) => (
+                    <motion.tr
+                      key={i}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: i * 0.03 }}
+                      className="border-b border-white/3 hover:bg-white/2 transition-colors"
+                    >
+                      <td className="px-4 sm:px-6 py-3.5 font-semibold text-sm text-white">{pos.coin}</td>
+                      <td className={`px-4 sm:px-6 py-3.5 text-sm font-mono ${Number(pos.szi) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {numFmt(Math.abs(pos.szi))}
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 text-sm font-mono text-gray-400">${numFmt(pos.entryPx)}</td>
+                      <td className={`px-4 sm:px-6 py-3.5 text-sm font-mono font-semibold ${Number(pos.unrealizedPnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {Number(pos.unrealizedPnl) >= 0 ? '+' : ''}{numFmt(pos.unrealizedPnl)}
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 text-[10px] font-mono text-purple-400/50">
+                        …{pos.parentProxy?.slice(-6)}
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Trade History */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+          className="glass-card rounded-2xl overflow-hidden"
+        >
+          <div className="px-6 py-4 border-b border-white/5 flex items-center gap-3">
+            <History size={15} className="text-purple-400" />
+            <span className="text-sm font-medium text-gray-300">Trade History</span>
+            <span className="text-[10px] text-gray-600 ml-auto">{totals.history.length} fills across all nodes</span>
           </div>
-          
-          <div className="max-h-[500px] overflow-y-auto">
-            <table className="w-full text-left">
-              <thead className="sticky top-0 bg-[#0D0E14] z-10">
-                <tr className="border-b border-white/5 bg-white/[0.01]">
-                  {['Time', 'Asset', 'Side', 'Price', 'Size', 'Source Node'].map(h => (
-                    <th key={h} className="px-8 py-4 text-[10px] font-black uppercase text-white/20 tracking-widest">{h}</th>
+
+          <div className="max-h-[480px] overflow-y-auto overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left min-w-[480px]">
+              <thead className="sticky top-0 z-10" style={{ background: 'rgba(15, 10, 28, 0.95)' }}>
+                <tr className="border-b border-white/5">
+                  {['Time', 'Asset', 'Side', 'Price', 'Size', 'Node'].map(h => (
+                    <th key={h} className="px-4 sm:px-6 py-3 text-[10px] font-semibold text-gray-600 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.02]">
-                {totals.history.map((fill, i) => (
-                  <tr key={i} className="hover:bg-white/[0.01] transition-colors">
-                    <td className="px-8 py-4 font-mono text-[10px] text-white/30">
+              <tbody>
+                {totals.history.map((fill: any, i: number) => (
+                  <motion.tr
+                    key={i}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: Math.min(i * 0.01, 0.3) }}
+                    className="border-b border-white/2 hover:bg-white/2 transition-colors"
+                  >
+                    <td className="px-4 sm:px-6 py-3 text-[10px] font-mono text-gray-600">
                       {new Date(fill.time).toLocaleTimeString()}
                     </td>
-                    <td className="px-8 py-4 font-bold text-sm">{fill.coin}</td>
-                    <td className="px-8 py-4">
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded ${fill.side === 'B' ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10'}`}>
-                        {fill.side === 'B' ? 'BUY' : 'SELL'}
+                    <td className="px-4 sm:px-6 py-3 text-sm font-semibold text-white">{fill.coin}</td>
+                    <td className="px-4 sm:px-6 py-3">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        fill.side === 'B'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                      }`}>
+                        {fill.side === 'B' ? 'Buy' : 'Sell'}
                       </span>
                     </td>
-                    <td className="px-8 py-4 font-mono text-sm">${numFmt(fill.px)}</td>
-                    <td className="px-8 py-4 font-mono text-sm">{numFmt(fill.sz)}</td>
-                    <td className="px-8 py-4 text-[10px] font-mono text-indigo-400/50 italic">
-                      Node_{fill.parentProxy.slice(-6)}
+                    <td className="px-4 sm:px-6 py-3 text-xs font-mono text-gray-400">${numFmt(fill.px)}</td>
+                    <td className="px-4 sm:px-6 py-3 text-xs font-mono text-gray-400">{numFmt(fill.sz)}</td>
+                    <td className="px-4 sm:px-6 py-3 text-[10px] font-mono text-purple-400/50">
+                      …{fill.parentProxy?.slice(-6)}
                     </td>
-                  </tr>
+                  </motion.tr>
                 ))}
                 {totals.history.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-20 text-center text-white/10 font-mono text-xs uppercase tracking-[0.3em]">
-                      {phase === 'streaming' ? 'Scanning Nodes...' : 'No network history found'}
+                    <td colSpan={6} className="py-16 text-center">
+                      <History size={24} className="mx-auto mb-3 text-gray-700" />
+                      <p className="text-sm text-gray-600">
+                        {isLoading ? 'Scanning nodes...' : 'No trade history found'}
+                      </p>
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </div>
+        </motion.div>
 
-        {/* NODE STATUS RIVER */}
-        <div className="space-y-4">
-            <div className="flex justify-between items-center px-4">
-               <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">Identity Node Infrastructure</h2>
-               <button onClick={() => setHideEmpty(!hideEmpty)} className="text-[10px] font-mono text-indigo-400 flex items-center gap-2">
-                 {hideEmpty ? <EyeOff size={12}/> : <Eye size={12}/>} {hideEmpty ? 'Hiding Empty' : 'Show All Nodes'}
-               </button>
-            </div>
-            <div className="grid gap-2">
-               {displayNodes.map((node) => (
-                 <div key={node.address} className="flex items-center gap-6 px-8 py-4 bg-white/[0.02] border border-white/5 rounded-2xl">
-                    <div className="w-8 font-mono text-[10px] text-white/20">{node.idx + 1}</div>
-                    <div className="flex-1 font-mono text-[11px] text-white/40 truncate">{node.address}</div>
-                    <div className="text-right">
-                        <p className="text-xs font-bold">${numFmt(node.accountValue)}</p>
-                        <p className="text-[8px] font-black text-white/10 uppercase">Value</p>
-                    </div>
-                    <div className={`w-1.5 h-1.5 rounded-full ${node.status === 'loaded' ? 'bg-indigo-500' : 'bg-white/10'}`} />
-                 </div>
-               ))}
-            </div>
-        </div>
+        {/* Node Grid */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+          className="space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-gray-500">Node Infrastructure</h2>
+            <motion.button
+              onClick={() => setHideEmpty(!hideEmpty)}
+              className="flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300 transition-colors"
+              whileHover={{ scale: 1.04 }}
+            >
+              {hideEmpty ? <EyeOff size={12} /> : <Eye size={12} />}
+              {hideEmpty ? 'Show empty' : 'Hide empty'}
+            </motion.button>
+          </div>
+
+          <div className="grid gap-2">
+            {displayNodes.length === 0 && !isLoading && (
+              <div className="text-center py-8 text-gray-600 text-sm">No nodes to display</div>
+            )}
+            {isLoading && displayNodes.length === 0 &&
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-14 rounded-2xl shimmer" />
+              ))
+            }
+            {displayNodes.map((node, i) => (
+              <motion.div
+                key={node.address}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.04 }}
+                className={`flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all ${
+                  node.status === 'loaded'
+                    ? 'glass-card'
+                    : node.status === 'pending'
+                    ? 'bg-white/1 border-white/4'
+                    : 'bg-white/1 border-white/3 opacity-50'
+                }`}
+              >
+                <div className="w-6 text-[10px] font-mono text-gray-700">{node.idx + 1}</div>
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  node.status === 'loaded' ? 'bg-purple-500' :
+                  node.status === 'pending' ? 'bg-white/15 animate-pulse' :
+                  'bg-white/8'
+                }`} />
+                <div className="flex-1 font-mono text-xs text-gray-600 truncate">{node.address}</div>
+                {node.status === 'pending' && <Loader2 size={12} className="text-purple-400/40 animate-spin flex-shrink-0" />}
+                {node.status === 'loaded' && (
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-sm font-semibold text-white">${numFmt(node.accountValue)}</p>
+                    <p className={`text-[10px] ${node.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {node.unrealizedPnl >= 0 ? '+' : ''}{numFmt(node.unrealizedPnl)}
+                    </p>
+                  </div>
+                )}
+                {node.status === 'empty' && (
+                  <span className="text-[10px] text-gray-700">Empty</span>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+
       </main>
     </div>
   );

@@ -5,10 +5,9 @@ import { useAccount, useSignTypedData } from 'wagmi';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Zap, Shield, Plus, ChevronRight, X, Loader2, Check,
-  ArrowUpRight, Link2, ArrowDownLeft, Layers,
-  AlertCircle
+  ArrowUpRight, Link2, ArrowDownLeft, Layers, RefreshCw,
+  AlertCircle, ArrowRightLeft, Fuel, ExternalLink, ChevronLeft
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import Header from './Header';
@@ -17,13 +16,15 @@ import { onPendingRequest, resolveRequest, type PendingRequest } from '@/lib/wal
 import {
   apiRegister, apiGenerateAddress, apiDeriveKey, apiStealthAddresses,
   getStoredEOA, getHLUserState, apiGetBalance, apiDeposit,
-  apiWithdraw, apiBridge, apiGetBridgeStatus
+  apiWithdraw, apiBridge, apiGetBridgeStatus,
+  apiWithdrawAvailable
 } from '@/lib/api/hyperStealth';
-import { disconnectAllSessions, getWeb3Wallet, prepareForPairing, setSessionProposalHandler } from '@/lib/walletController';
+import { prepareForPairing, setSessionProposalHandler } from '@/lib/walletController';
 import { approveToken, switchChainNetwork } from '@/lib/walletHelpers';
 import { getAddress, parseUnits } from 'viem';
+import { useBalance } from 'wagmi';
 
-type MainTab = 'BRIDGE' | 'PA';
+type MainTab = 'BRIDGE' | 'WITHDRAW_TEE' | 'PA';
 type TxStatus = 'IDLE' | 'PROCESSING' | 'SUCCESS' | 'ERROR';
 type TerminalView = 'ACTIONS' | 'DEPOSIT_INPUT' | 'DEPOSIT_STEPS' | 'WITHDRAW_INPUT' | 'WITHDRAW_STEPS' | 'CONNECT_HANDSHAKE' | 'SIGNING_REQUIRED' | 'CONNECT_STATUS';
 type ConnectStep = 'idle' | 'pairing' | 'approving' | 'success';
@@ -35,6 +36,55 @@ interface Proxy {
   connected: boolean;
   balance: string;
   pnl: string;
+}
+
+// ─── Amount Input with built-in max + error ─────────────────
+function AmountInput({
+  value, onChange, max, label, error, placeholder = '0.00', suffix,
+}: {
+  value: string; onChange: (v: string) => void; max: string;
+  label?: string; error?: string | null; placeholder?: string; suffix?: string;
+}) {
+  const maxNum = parseFloat(max) || 0;
+  return (
+    <div className="space-y-1.5">
+      {label && (
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{label}</span>
+          <button
+            type="button"
+            onClick={() => onChange(maxNum.toFixed(2))}
+            className="text-[10px] text-purple-400 hover:text-purple-300 font-semibold transition-colors px-2 py-0.5 rounded-md bg-purple-500/10 hover:bg-purple-500/20"
+          >
+            MAX ${maxNum.toFixed(2)}
+          </button>
+        </div>
+      )}
+      <div className={`flex items-center gap-2 rounded-2xl border bg-white/3 px-4 py-3 transition-colors ${error ? 'border-red-500/40' : 'border-white/8 focus-within:border-purple-500/40'}`}>
+        <input
+          type="number"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 bg-transparent text-2xl font-semibold text-white outline-none placeholder:text-gray-700 min-w-0"
+        />
+        {suffix && <span className="text-xs text-gray-600 font-medium flex-shrink-0">{suffix}</span>}
+      </div>
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: 'auto' }}
+            exit={{ opacity: 0, y: -4, height: 0 }}
+            className="flex items-center gap-1.5 text-red-400 overflow-hidden"
+          >
+            <AlertCircle size={11} className="flex-shrink-0" />
+            <p className="text-[11px] font-medium">{error}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) => void }) {
@@ -49,6 +99,9 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [txStatus, setTxStatus] = useState<TxStatus>('IDLE');
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [newestProxyAddress, setNewestProxyAddress] = useState<string | null>(null);
+  const [refreshingBalance, setRefreshingBalance] = useState<string | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
 
   const [amount, setAmount] = useState('10');
   const [wcUri, setWcUri] = useState('');
@@ -58,25 +111,47 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [progress, setProgress] = useState(0);
   const [connectStep, setConnectStep] = useState<ConnectStep>('idle');
   const [pendingReq, setPendingReq] = useState<PendingRequest | null>(null);
-  // tracks whether HL session is active (either via sign or direct connect)
   const [hlConnected, setHlConnected] = useState(false);
   const directConnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Bridge step state — drives the step UI in the BRIDGE tab
   const [bridgePhase, setBridgePhase] = useState<'idle'|'switching'|'approving'|'bridging'|'waiting'|'done'|'error'>('idle');
   const [bridgeError, setBridgeError] = useState<string | null>(null);
 
-  // ── KEY FIX: use a ref to track whether we already showed the signing view
-  // to prevent the listener firing multiple times or racing with view state
+  // Mobile: whether the terminal panel is shown (full-screen on mobile)
+  const [mobileShowTerminal, setMobileShowTerminal] = useState(false);
+
   const signingHandledRef = useRef(false);
-  const HORIZEN_USDC_ADDRESS=(import.meta as any).env?.VITE_HORIZEN_USDC_ADDRESS
-  const CENTRAL_WALLET=(import.meta as any).env?.VITE_CENTRAL_WALLET
+  const HORIZEN_USDC_ADDRESS = (import.meta as any).env?.VITE_HORIZEN_USDC_ADDRESS;
+  const CENTRAL_WALLET = (import.meta as any).env?.VITE_CENTRAL_WALLET;
 
   const STEPS = [
-    { id: 'signing', label: 'Authorize', desc: 'Sign secure permit' },
-    { id: 'relaying', label: 'Relaying', desc: 'Submitting to sequencer' },
-    { id: 'finalizing', label: 'Finalizing', desc: 'Confirming settlement' }
+    { id: 'signing',   label: 'Authorize',  desc: 'Sign secure permit' },
+    { id: 'relaying',  label: 'Relaying',   desc: 'Submitting to sequencer' },
+    { id: 'finalizing',label: 'Finalizing', desc: 'Confirming settlement' }
   ];
+
+  const { data: walletBal } = useBalance({
+    address,
+    token: HORIZEN_USDC_ADDRESS as `0x${string}`,
+    chainId: 26514,
+  });
+
+  const getActiveLimit = () => {
+    if (activeTab === 'BRIDGE')       return walletBal?.formatted || '0';
+    if (activeTab === 'WITHDRAW_TEE') return serverBalance || '0';
+    if (view === 'DEPOSIT_INPUT')     return serverBalance || '0';
+    if (view === 'WITHDRAW_INPUT')    return selectedProxy?.balance || '0';
+    return '0';
+  };
+
+  useEffect(() => {
+    const limit = parseFloat(getActiveLimit());
+    const input = parseFloat(amount || '0');
+    if (amount === '' || isNaN(input))  { setAmountError(null); return; }
+    if (input > limit)  { setAmountError(`Exceeds available: $${limit.toLocaleString(undefined, { minimumFractionDigits: 2 })}`); return; }
+    if (input <= 0)     { setAmountError('Amount must be greater than 0'); return; }
+    setAmountError(null);
+  }, [amount, activeTab, view, serverBalance, walletBal, selectedProxy]);
 
   const loadData = async () => {
     const eoa = getStoredEOA() || address;
@@ -87,7 +162,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         let connected = false, balance = '0', pnl = '0';
         try {
           const state = await getHLUserState(s.address);
-          if (state && state.marginSummary && Number(state.marginSummary.accountValue) > 0) {
+          if (state?.marginSummary && Number(state.marginSummary.accountValue) > 0) {
             connected = true;
             balance = state.marginSummary.accountValue;
             pnl = state.marginSummary.unrealizedPnl;
@@ -102,908 +177,963 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   };
 
   useEffect(() => {
-    setProxies([]);
-    setLoading(false);
-    setSelectedProxy(null);
+    setProxies([]); setLoading(false); setSelectedProxy(null); setMobileShowTerminal(false);
   }, [address]);
 
-  // ── Signing request listener ──
-  // WalletConnect event callbacks run outside React's synthetic event system.
-  // React 18 batches ALL setState calls by default, including those from
-  // external async sources — meaning setPendingReq + setView may be batched
-  // and deferred until after handleConnect's own setState calls run,
-  // causing handleConnect to overwrite SIGNING_REQUIRED.
-  //
-  // flushSync forces React to flush the DOM synchronously right now,
-  // before returning from the callback — guaranteeing the UI shows
-  // SIGNING_REQUIRED immediately, with no batching deferral possible.
   const signingActiveRef = useRef(false);
-
-  // Keep a ref to selectedProxy so the listener can check it without stale closure
   const selectedProxyRef = useRef<Proxy | null>(null);
   useEffect(() => { selectedProxyRef.current = selectedProxy; }, [selectedProxy]);
 
   useEffect(() => {
     const unsubscribe = onPendingRequest((req: any) => {
-      // Only handle this request in DashboardLayout if the terminal pane is open.
-      // If selectedProxy is null (user on portfolio page, or terminal closed),
-      // do nothing — GlobalSigningModal in App.tsx will catch it instead.
       if (req) {
         if (req.missingKeys) {
-          if (!selectedProxyRef.current) return; // let global modal handle
-          console.error("[Terminal] Missing stealth keys — cannot sign");
-          flushSync(() => {
-            setError("Stealth key not found. Please recreate this proxy.");
-            setView('ACTIONS');
-            setConnectStep('idle');
-          });
+          if (!selectedProxyRef.current) return;
+          flushSync(() => { setError('Stealth key not found. Please recreate this proxy.'); setView('ACTIONS'); setConnectStep('idle'); });
           return;
         }
-
-        // If terminal is not open, let the global modal handle it
-        if (!selectedProxyRef.current) {
-          console.log("[Terminal] No proxy selected — deferring to GlobalSigningModal");
-          return;
-        }
-
-        console.log("[Terminal] ✓ Pending request received:", req.method);
+        if (!selectedProxyRef.current) return;
         signingActiveRef.current = true;
         signingHandledRef.current = false;
-        flushSync(() => {
-          setPendingReq(req);
-          setView('SIGNING_REQUIRED');
-        });
+        flushSync(() => { setPendingReq(req); setView('SIGNING_REQUIRED'); });
       } else {
         if (!signingHandledRef.current) {
           signingActiveRef.current = false;
-          flushSync(() => {
-            setPendingReq(null);
-          });
+          flushSync(() => { setPendingReq(null); });
         }
       }
     });
     return () => unsubscribe();
-  }, []); // safe with flushSync — selectedProxy accessed via ref, never stale
+  }, []);
 
   const handleSwitchToPA = async () => {
     setActiveTab('PA');
     if (loading) return;
     setLoading(true);
-    try {
-      await loadData();
-    } catch (err) {
-      console.error("Authentication failed", err);
-    } finally {
-      setLoading(false);
-    }
+    try { await loadData(); } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  // ── Bridge handler — step-by-step, no overlay HUD ──
   const handleBridge = async () => {
-    setBridgePhase('switching');
-    setBridgeError(null);
+    setBridgePhase('switching'); setBridgeError(null);
     try {
       const rawAmount = parseUnits(amount, 6).toString();
-
-      // Step 1: Switch to Horizen
-      setBridgePhase('switching');
       await switchChainNetwork(26514);
-
-      // Step 2: Approve token spend
       setBridgePhase('approving');
-      await approveToken(
-        HORIZEN_USDC_ADDRESS,
-       CENTRAL_WALLET,
-        rawAmount
-      );
-
-      // Step 3: Submit bridge tx
+      await approveToken(HORIZEN_USDC_ADDRESS, CENTRAL_WALLET, rawAmount);
       setBridgePhase('bridging');
       const res = await apiBridge(address!, rawAmount, signTypedDataAsync);
-
-      // Step 4: Wait for delivery
       setBridgePhase('waiting');
       let delivered = false;
       while (!delivered) {
         const s = await apiGetBridgeStatus(res.txHash);
-        if (s.status === "DELIVERED") delivered = true;
-        else if (s.status === "FAILED") throw new Error("Bridge transaction failed on-chain");
+        if (s.status === 'DELIVERED') delivered = true;
+        else if (s.status === 'FAILED') throw new Error('Bridge transaction failed on-chain');
         else await new Promise(r => setTimeout(r, 3000));
       }
-
-      // Done
       setBridgePhase('done');
-      await loadData(); // refresh server balance
-    } catch (e: any) {
-      setBridgeError(e.message || "Bridge failed");
-      setBridgePhase('error');
-    }
+      await loadData();
+    } catch (e: any) { setBridgeError(e.message || 'Bridge failed'); setBridgePhase('error'); }
   };
 
-  const handleAction = async (type: 'DEPOSIT' | 'CONNECT' | 'WITHDRAW') => {
+  const handleTeeWithdraw = async () => {
+    if (!address || !amount) return;
     setTxStatus('PROCESSING');
-    setError(null);
     try {
-      if (type === 'DEPOSIT' && selectedProxy) {
-        await apiDeposit(address!, selectedProxy.address, serverBalance, signTypedDataAsync);
-      } else if (type === 'WITHDRAW' && selectedProxy) {
-        await apiWithdraw(address!, selectedProxy.address, destination, parseUnits(amount, 6).toString(), signTypedDataAsync);
-      } else if (type === 'CONNECT' && selectedProxy) {
-        const wc = await prepareForPairing();
-        setSessionProposalHandler(async (p: any) => {
-          await wc.approveSession({
-            id: p.id,
-            namespaces: { eip155: { accounts: [`eip155:42161:${getAddress(selectedProxy.address)}`], methods: ["eth_sendTransaction", "personal_sign", "eth_signTypedData_v4"], events: ["accountsChanged"], chains: ["eip155:42161"] } }
-          });
-        });
-        await wc.core.pairing.pair({ uri: wcUri });
-      }
+      const rawAmount = parseUnits(amount, 6).toString();
+      await apiWithdrawAvailable(address, address, rawAmount, signTypedDataAsync);
       setTxStatus('SUCCESS');
-      setTimeout(() => { setTxStatus('IDLE'); loadData(); }, 2000);
-    } catch (e: any) { setError(e.message || "Failed"); setTxStatus('ERROR'); }
+      setTimeout(() => { setActiveTab('PA'); loadData(); setTxStatus('IDLE'); }, 2000);
+    } catch (e: any) { setError(e.message || 'Withdrawal failed'); setTxStatus('ERROR'); }
   };
 
   const handleConnect = async () => {
-    if (!selectedProxy || !wcUri.startsWith('wc:')) {
-      setError("Invalid WalletConnect URI");
-      setView('ACTIONS');
-      return;
-    }
-
-    // Reset the signing gate before starting a new connect flow
+    if (!selectedProxy || !wcUri.startsWith('wc:')) { setError('Invalid WalletConnect URI'); setView('ACTIONS'); return; }
     signingActiveRef.current = false;
-
-    // ── CRITICAL: Ensure stealth key is in storage for walletController ──
-    // walletController.getStoredKeys() needs BOTH nyra_stealth_key AND
-    // nyra_stealth_address to sign. Check if the stored key matches this proxy.
-    const storedAddress = localStorage.getItem("nyra_active_stealth");
-    const storedKey = localStorage.getItem("nyra_stealth_key");
+    const storedAddress = localStorage.getItem('nyra_active_stealth');
+    const storedKey    = localStorage.getItem('nyra_stealth_key');
     const keyMatchesProxy = storedAddress?.toLowerCase() === selectedProxy.address.toLowerCase();
-
     if (!keyMatchesProxy || !storedKey) {
-      // Key is missing or belongs to a different proxy — must re-derive
-      setConnectStep('pairing'); // show spinner while we re-derive
+      setConnectStep('pairing');
       try {
-        console.log("[Terminal] Re-deriving key for proxy:", selectedProxy.address);
         const { stealthPrivateKey } = await apiDeriveKey(address!, selectedProxy.address, signTypedDataAsync);
-        localStorage.setItem("nyra_active_stealth", selectedProxy.address);
-        localStorage.setItem("nyra_stealth_key", stealthPrivateKey);
-        sessionStorage.setItem("nyra_stealth_address", selectedProxy.address);
-        sessionStorage.setItem("nyra_stealth_key", stealthPrivateKey);
-        console.log("[Terminal] Key re-derived and saved ✓");
-      } catch (e: any) {
-        setError("Failed to load proxy key: " + e.message);
-        setView('ACTIONS');
-        return;
-      }
+        localStorage.setItem('nyra_active_stealth', selectedProxy.address);
+        localStorage.setItem('nyra_stealth_key', stealthPrivateKey);
+        sessionStorage.setItem('nyra_stealth_address', selectedProxy.address);
+        sessionStorage.setItem('nyra_stealth_key', stealthPrivateKey);
+      } catch (e: any) { setError('Failed to load proxy key: ' + e.message); setView('ACTIONS'); return; }
     } else {
-      // Key exists and matches — just ensure sessionStorage is synced
-      sessionStorage.setItem("nyra_stealth_address", selectedProxy.address);
-      sessionStorage.setItem("nyra_stealth_key", storedKey);
-      console.log("[Terminal] Key already in storage for proxy ✓");
+      sessionStorage.setItem('nyra_stealth_address', selectedProxy.address);
+      sessionStorage.setItem('nyra_stealth_key', storedKey);
     }
-
-    setView('CONNECT_STATUS');
-    setConnectStep('pairing');
-    setTxStatus('IDLE');
-    setError(null);
-
+    setView('CONNECT_STATUS'); setConnectStep('pairing'); setTxStatus('IDLE'); setError(null);
     try {
       const wc = await prepareForPairing();
-
       setSessionProposalHandler(async (proposal: any) => {
         try {
           const signerAddress = getAddress(selectedProxy.address);
           const required = proposal.params.requiredNamespaces?.eip155 ?? {};
-          const methods = required.methods?.length > 0 ? required.methods :
-            ["eth_sendTransaction", "personal_sign", "eth_signTypedData_v4", "eth_sign", "eth_signTypedData"];
-
-          // HL fires session_request during or immediately after approveSession.
-          // The onPendingRequest listener may have ALREADY set view=SIGNING_REQUIRED
-          // and signingActiveRef=true by the time this await resolves.
+          const methods = required.methods?.length > 0 ? required.methods
+            : ['eth_sendTransaction','personal_sign','eth_signTypedData_v4','eth_sign','eth_signTypedData'];
           await wc.approveSession({
             id: proposal.id,
-            namespaces: {
-              eip155: {
-                accounts: [`eip155:42161:${signerAddress}`],
-                methods,
-                events: ["accountsChanged", "chainChanged"],
-                chains: ["eip155:42161"],
-              },
-            },
+            namespaces: { eip155: { accounts: [`eip155:42161:${signerAddress}`], methods, events: ['accountsChanged','chainChanged'], chains: ['eip155:42161'] } },
           });
-
-          // Two cases after approveSession resolves:
-          // A) HL sends session_request immediately → signingActiveRef=true, listener
-          //    has already set view=SIGNING_REQUIRED. Do nothing.
-          // B) HL skips auth (already has active session / trusted device) →
-          //    signingActiveRef=false. We are connected. Show ACTIONS + mark connected.
           if (signingActiveRef.current) {
-            console.log("[Terminal] Signing request already active — listener owns the view.");
+            // listener owns the view
           } else {
-            console.log("[Terminal] Handshake approved. Waiting briefly for HL auth request...");
             setConnectStep('approving');
-            // Wait up to 2.5s for a session_request. If none arrives, HL skipped
-            // auth entirely — we are already connected.
             await new Promise<void>((resolve) => {
               const timeout = setTimeout(() => resolve(), 2500);
-              // If signing becomes active while waiting, resolve early
-              const poll = setInterval(() => {
-                if (signingActiveRef.current) { clearTimeout(timeout); clearInterval(poll); resolve(); }
-              }, 100);
+              const poll = setInterval(() => { if (signingActiveRef.current) { clearTimeout(timeout); clearInterval(poll); resolve(); } }, 100);
             });
-
             if (!signingActiveRef.current) {
-              // No signing request came — HL connected directly without auth
-              console.log("[Terminal] HL connected without auth request — session active ✓");
               setHlConnected(true);
-              // Clear connected on ALL proxies except this one
-              setProxies(prev => prev.map(p =>
-                p.address === selectedProxy.address
-                  ? { ...p, connected: true }
-                  : { ...p, connected: false }
-              ));
+              setProxies(prev => prev.map(p => p.address === selectedProxy.address ? { ...p, connected: true } : { ...p, connected: false }));
               setSelectedProxy(prev => prev ? { ...prev, connected: true } : prev);
               setConnectStep('success');
-              setTimeout(() => {
-                setConnectStep('idle');
-                setView('ACTIONS');
-                setWcUri('');
-              }, 1500);
+              setTimeout(() => { setConnectStep('idle'); setView('ACTIONS'); setWcUri(''); }, 1500);
             }
-            // else: signing request arrived during the wait — listener owns the view
           }
-
-        } catch (e: any) {
-          throw new Error(e.message || "Session approval rejected");
-        } finally {
-          setSessionProposalHandler(null);
-        }
+        } catch (e: any) { throw new Error(e.message || 'Session approval rejected'); }
+        finally { setSessionProposalHandler(null); }
       });
-
       await wc.core.pairing.pair({ uri: wcUri });
-
     } catch (err: any) {
-      setSessionProposalHandler(null);
-      setError(err.message || "Connection failed");
-      setTxStatus('ERROR');
-      setView('ACTIONS');
+      setSessionProposalHandler(null); setError(err.message || 'Connection failed');
+      setTxStatus('ERROR'); setView('ACTIONS');
     }
   };
 
   const handleDepositFlow = async () => {
     if (!selectedProxy || !address) return;
-    setView('DEPOSIT_STEPS');
-    setError(null);
+    setView('DEPOSIT_STEPS'); setError(null);
     try {
-      setTxStep('signing');
-      setProgress(20);
+      setTxStep('signing'); setProgress(20);
       await new Promise(r => setTimeout(r, 800));
-      setTxStep('relaying');
-      setProgress(60);
-      const rawAmount = parseUnits(amount, 6).toString();
-      await apiDeposit(address, selectedProxy.address, rawAmount, signTypedDataAsync);
-      setTxStep('finalizing');
-      setProgress(90);
+      setTxStep('relaying'); setProgress(60);
+      await apiDeposit(address, selectedProxy.address, parseUnits(amount, 6).toString(), signTypedDataAsync);
+      setTxStep('finalizing'); setProgress(90);
       await new Promise(r => setTimeout(r, 1200));
-      setTxStep('success');
-      setProgress(100);
+      setTxStep('success'); setProgress(100);
       setTimeout(() => { setView('ACTIONS'); loadData(); }, 2000);
-    } catch (err: any) {
-      setError(err.message || "Deposit failed");
-      setTxStatus('ERROR');
-    }
+    } catch (err: any) { setError(err.message || 'Deposit failed'); setTxStatus('ERROR'); }
   };
 
   const handleWithdrawFlow = async () => {
     if (!selectedProxy || !address || !destination) return;
-    setView('WITHDRAW_STEPS');
-    setError(null);
+    setView('WITHDRAW_STEPS'); setError(null);
     try {
-      setTxStep('signing');
-      setProgress(20);
+      setTxStep('signing'); setProgress(20);
       await new Promise(r => setTimeout(r, 800));
-      setTxStep('relaying');
-      setProgress(60);
-      const rawAmount = parseUnits(amount, 6).toString();
-      await apiWithdraw(address, selectedProxy.address, destination, rawAmount, signTypedDataAsync);
-      setTxStep('finalizing');
-      setProgress(90);
+      setTxStep('relaying'); setProgress(60);
+      await apiWithdraw(address, selectedProxy.address, destination, parseUnits(amount, 6).toString(), signTypedDataAsync);
+      setTxStep('finalizing'); setProgress(90);
       await new Promise(r => setTimeout(r, 1200));
-      setTxStep('success');
-      setProgress(100);
+      setTxStep('success'); setProgress(100);
       setTimeout(() => { setView('ACTIONS'); loadData(); }, 2500);
-    } catch (err: any) {
-      setError(err.message || "Withdraw failed");
-      setTxStatus('ERROR');
-    }
+    } catch (err: any) { setError(err.message || 'Withdraw failed'); setTxStatus('ERROR'); }
   };
 
-  // ── FIXED: handleApproveSign ──
-  // Previously: resolveRequest(true) → setTxStatus('SUCCESS') 
-  // This caused the overlay HUD to appear AND fight with the view transition.
-  // 
-  // Fix: We NEVER use setTxStatus here. Instead we update the view directly
-  // to a local "signed" success state inline within SIGNING_REQUIRED, then
-  // clean up. The walletController does its signing in the background.
   const handleApproveSign = async () => {
     if (!pendingReq) return;
-    
-    signingHandledRef.current = true;
-    signingActiveRef.current = false;
-    // Cancel the direct-connect fallback timer — we got a real sign request
+    signingHandledRef.current = true; signingActiveRef.current = false;
     if (directConnectTimerRef.current) clearTimeout(directConnectTimerRef.current);
-
-    console.log("[Terminal] User approved signing for:", pendingReq.method);
-
-    setPendingReq(null);
-    setView('CONNECT_STATUS');
-    setConnectStep('success');
-
+    setPendingReq(null); setView('CONNECT_STATUS'); setConnectStep('success');
     resolveRequest(true);
-
     setTimeout(() => {
-      setConnectStep('idle');
-      setHlConnected(true);
-      // Mark ONLY this proxy as connected, clear all others
-      setProxies(prev => prev.map(p =>
-        p.address === selectedProxy?.address
-          ? { ...p, connected: true }
-          : { ...p, connected: false }
-      ));
+      setConnectStep('idle'); setHlConnected(true);
+      setProxies(prev => prev.map(p => p.address === selectedProxy?.address ? { ...p, connected: true } : { ...p, connected: false }));
       setSelectedProxy(prev => prev ? { ...prev, connected: true } : prev);
-      setView('ACTIONS');
-      loadData();
+      setView('ACTIONS'); loadData();
     }, 2200);
   };
 
   const handleRejectSign = () => {
-    signingHandledRef.current = true;
-    signingActiveRef.current = false;
-    resolveRequest(false);
-    setPendingReq(null);
-    setView('ACTIONS');
-    setConnectStep('idle');
+    signingHandledRef.current = true; signingActiveRef.current = false;
+    resolveRequest(false); setPendingReq(null); setView('ACTIONS'); setConnectStep('idle');
   };
 
-  return (
-    <div className="min-h-screen bg-[#0A0B0E] text-white">
-      <Header onNavigate={onNavigate} currentPage="dashboard" />
+  // Open a proxy: on mobile shows the terminal full-screen
+  const openProxy = (p: Proxy) => {
+    setSelectedProxy(p); setView('ACTIONS');
+    setMobileShowTerminal(true);
+  };
 
-      <main className="flex items-center justify-center p-6 pt-32 min-h-screen">
-        <motion.div
-          layout
-          className="bg-[#12141C] border border-white/5 rounded-[40px] shadow-[0_30px_100px_-20px_rgba(0,0,0,0.5)] overflow-hidden flex"
-          style={{ width: selectedProxy ? '900px' : '500px' }}
-        >
-          {/* 1. SIDE DOCK */}
-          <div className="w-[84px] shrink-0 border-r border-white/5 py-8 flex flex-col items-center gap-6 bg-black/10">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 flex items-center justify-center mb-4">
-              <Shield className="text-indigo-400" size={20} />
-            </div>
-            <div className="flex flex-col gap-2 relative">
-              <NavTab active={activeTab === 'BRIDGE'} onClick={() => { setActiveTab('BRIDGE'); setSelectedProxy(null); }} icon={<Zap size={20} />} label="Bridge" />
-              <NavTab active={activeTab === 'PA'} onClick={() => { setActiveTab('PA'); handleSwitchToPA(); }} icon={<Layers size={20} />} label="PA" />
-            </div>
-          </div>
+  // Close terminal; on mobile goes back to list
+  const closeTerminal = () => {
+    setSelectedProxy(null); setView('ACTIONS'); setMobileShowTerminal(false);
+  };
 
-          {/* 2. EXPLORER */}
-          <div className="flex-1 p-10 flex flex-col overflow-y-auto min-h-0">
-            <AnimatePresence mode="wait">
-              {activeTab === 'BRIDGE' ? (
-                <motion.div key="bridge" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-5">
-                  <div className="space-y-2">
-                    <h2 className="text-2xl font-black italic uppercase tracking-tighter">Funding</h2>
-                    <p className="text-[10px] text-white/30 font-mono tracking-widest uppercase">Protocol: Stargate V2 Cross-Chain</p>
+  // ─── SHARED PANEL CONTENT (used in both desktop terminal + mobile sheet) ───
+  const TerminalContent = () => (
+    <div className="flex-1 space-y-4 overflow-y-auto custom-scrollbar pb-2">
+      <AnimatePresence mode="wait">
+
+        {/* ACTIONS */}
+        {view === 'ACTIONS' && selectedProxy && (
+          <motion.div key="actions" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="space-y-4">
+            {/* Balance card */}
+            <div className="p-4 rounded-2xl bg-white/3 border border-white/7 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">HL Account Value</span>
+                <span className={`text-[9px] font-medium px-2 py-0.5 rounded-full border ${
+                  selectedProxy.connected ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-white/20 border-white/8'
+                }`}>{selectedProxy.connected ? '● Synced' : '○ Standby'}</span>
+              </div>
+              <div className="text-3xl font-semibold text-white">
+                {Number(selectedProxy.balance) > 0
+                  ? `$${Number(selectedProxy.balance).toLocaleString()}`
+                  : <span className="text-gray-600 text-xl font-normal">No position</span>}
+              </div>
+              {Number(selectedProxy.balance) > 0 && (
+                <div className={`text-xs font-medium ${Number(selectedProxy.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {Number(selectedProxy.pnl) >= 0 ? '+' : ''}{selectedProxy.pnl} Unrealized PnL
+                </div>
+              )}
+            </div>
+
+            {selectedProxy.connected ? (
+              <motion.div key="conn-act" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/15">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <p className="text-[10px] text-emerald-400 font-medium">Session Active — Trading Enabled</p>
+                </div>
+                <motion.a
+                  href="https://app.hyperliquid.xyz/trade" target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full h-11 rounded-xl btn-purple text-white font-semibold text-sm"
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                >
+                  <ExternalLink size={14} /> Start Trading
+                </motion.a>
+                <div className="grid grid-cols-2 gap-2">
+                  <ActionBtn icon={<ArrowDownLeft size={16} />} label="Deposit" sub="Fund account" onClick={() => setView('DEPOSIT_INPUT')} />
+                  <ActionBtn icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => setView('WITHDRAW_INPUT')} />
+                </div>
+                <div className="pt-3 border-t border-white/5 space-y-2">
+                  <Input value={wcUri} onChange={e => setWcUri(e.target.value)} placeholder="wc:... (re-pair session)"
+                    className="bg-white/3 border-white/8 h-9 rounded-xl font-mono text-[10px] placeholder:text-gray-700" />
+                  <button onClick={handleConnect} disabled={!wcUri.startsWith('wc:')}
+                    className="w-full h-9 rounded-xl text-[10px] font-medium text-gray-500 hover:text-gray-300 border border-white/6 hover:border-white/12 transition-all disabled:opacity-20">
+                    Re-pair Session
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div key="disc-act" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <ActionBtn icon={<ArrowDownLeft size={16} />} label="Deposit" sub="From server" onClick={() => setView('DEPOSIT_INPUT')} />
+                  <ActionBtn icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => setView('WITHDRAW_INPUT')} />
+                </div>
+                <div className="pt-3 border-t border-white/5 space-y-2">
+                  <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wider">Connect Hyperliquid</p>
+                  <Input value={wcUri} onChange={e => setWcUri(e.target.value)} placeholder="wc:abc... (paste from Hyperliquid)"
+                    className="bg-white/3 border-white/8 h-10 rounded-xl font-mono text-[10px] placeholder:text-gray-700" />
+                  <motion.button onClick={handleConnect} disabled={!wcUri.startsWith('wc:')}
+                    className="w-full h-11 rounded-xl btn-purple text-white font-medium text-xs disabled:opacity-30"
+                    whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                    Connect to Hyperliquid
+                  </motion.button>
+                </div>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+
+        {/* DEPOSIT INPUT */}
+        {view === 'DEPOSIT_INPUT' && (
+          <motion.div key="dep_in" initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-white">Deposit Funds</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Transfer from server balance to proxy</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-white/2 border border-white/6 space-y-3">
+              <AmountInput
+                value={amount} onChange={setAmount}
+                max={(parseFloat(serverBalance) / 1e6).toFixed(2)}
+                label="Amount (USDC)"
+                error={view === 'DEPOSIT_INPUT' ? amountError : null}
+              />
+              <div className="flex flex-col gap-0.5 pt-1">
+                <p className="text-[10px] text-gray-600">Available: ${(Number(serverBalance) / 1e6).toFixed(2)}</p>
+                <p className="text-[10px] text-gray-600">Minimum deposit: 5 USDC · Maximum: 8,000 USDC</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setView('ACTIONS')} className="flex-1 h-10 rounded-xl bg-white/5 border border-white/8 text-sm text-gray-400 hover:bg-white/8 transition-all">Back</button>
+              <motion.button onClick={handleDepositFlow} disabled={!!amountError || !amount || amount === '0'}
+                className="flex-1 h-10 rounded-xl btn-purple text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                Deposit Now
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* WITHDRAW INPUT */}
+        {view === 'WITHDRAW_INPUT' && (
+          <motion.div key="with_in" initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-white">Withdraw Assets</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Extract funds to any address</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-white/2 border border-white/6 space-y-3">
+              <div>
+                <label className="text-[10px] text-gray-600 font-medium uppercase tracking-wider block mb-1.5">Destination Address</label>
+                <Input value={destination} onChange={e => setDestination(e.target.value)} placeholder="0x..."
+                  className="bg-transparent border-none p-0 h-8 font-mono text-sm focus-visible:ring-0 text-white placeholder:text-gray-700" />
+              </div>
+              <div className="border-t border-white/5 pt-3">
+                <AmountInput
+                  value={amount} onChange={setAmount}
+                  max={Number(selectedProxy?.balance || 0).toFixed(2)}
+                  label="Amount (USDC)"
+                  error={view === 'WITHDRAW_INPUT' ? amountError : null}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setView('ACTIONS')} className="flex-1 h-10 rounded-xl bg-white/5 border border-white/8 text-sm text-gray-400 hover:bg-white/8 transition-all">Cancel</button>
+              <motion.button onClick={handleWithdrawFlow} disabled={!!amountError || !amount || amount === '0' || !destination}
+                className="flex-1 h-10 rounded-xl btn-purple text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                Withdraw
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* TX STEPS */}
+        {(view === 'DEPOSIT_STEPS' || view === 'WITHDRAW_STEPS') && (
+          <motion.div key="steps" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 pt-2">
+            <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+              <motion.div className="h-full progress-purple rounded-full" animate={{ width: `${progress}%` }} transition={{ duration: 0.5 }} />
+            </div>
+            <div className="space-y-2">
+              {STEPS.map((s, i) => {
+                const isCurrent = txStep === s.id;
+                const isDone = progress > (i + 1) * 30 || txStep === 'success';
+                return (
+                  <div key={s.id} className={`flex items-center gap-3 p-3.5 rounded-2xl border transition-all ${isCurrent ? 'bg-purple-500/8 border-purple-500/20' : 'opacity-30 border-transparent'}`}>
+                    <div className={`w-8 h-8 rounded-xl border-2 flex items-center justify-center flex-shrink-0 ${isDone ? 'bg-emerald-500 border-emerald-500' : isCurrent ? 'border-purple-500 text-purple-400' : 'border-white/10'}`}>
+                      {isDone ? <Check size={14} className="text-white" /> : isCurrent ? <Loader2 size={14} className="animate-spin" /> : <span className="text-[10px] font-semibold">{i + 1}</span>}
+                    </div>
+                    <div>
+                      <p className={`text-xs font-semibold ${isCurrent ? 'text-white' : 'text-white/20'}`}>{s.label}</p>
+                      <p className="text-[10px] text-gray-600">{s.desc}</p>
+                    </div>
                   </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
 
-                  {/* BRIDGE: input form */}
-                  {bridgePhase === 'idle' || bridgePhase === 'error' ? (
-                    <div className="bg-black/30 p-8 rounded-[32px] border border-white/5 space-y-6">
-                      <div className="space-y-4">
-                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">Amount (USDC.e)</label>
-                        <Input value={amount} onChange={e => setAmount(e.target.value)} className="h-14 bg-transparent border-none text-3xl font-bold p-0 focus-visible:ring-0" />
-                        <p className="text-[10px] text-white/20 font-mono">Bridge from Horizen EON → Arbitrum. Takes 2–5 min.</p>
-                      </div>
-                      {bridgePhase === 'error' && (
-                        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-red-500/8 border border-red-500/20">
-                          <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
-                          <p className="text-[10px] text-red-400 font-mono">{bridgeError}</p>
-                        </div>
-                      )}
-                      <Button
-                        onClick={handleBridge}
-                        className="w-full h-16 rounded-[24px] bg-white text-black font-black uppercase text-xs tracking-widest hover:bg-neutral-200 transition-all"
-                      >
-                        Bridge Liquidity
-                      </Button>
-                    </div>
-                  ) : bridgePhase === 'done' ? (
-                    /* ── BRIDGE SUCCESS ── */
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-                      className="bg-black/30 p-8 rounded-[32px] border border-emerald-500/20 space-y-6 text-center"
-                    >
-                      <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center bg-emerald-500/10 border border-emerald-500/20">
-                        <Check size={28} className="text-emerald-400" />
-                      </div>
-                      <div>
-                        <h3 className="font-black italic uppercase tracking-tighter text-lg mb-2">Bridge Complete</h3>
-                        <p className="text-[11px] text-white/40 font-mono leading-relaxed">
-                          Funds delivered to server balance.<br />
-                          You can now deposit to any proxy account.
-                        </p>
-                      </div>
-                      <Button
-                        onClick={() => { setBridgePhase('idle'); setBridgeError(null); }}
-                        className="w-full h-12 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-black uppercase text-[10px] tracking-widest"
-                      >
-                        Bridge More
-                      </Button>
-                    </motion.div>
-                  ) : (
-                    /* ── BRIDGE STEPS ── */
-                    <div className="bg-black/30 p-5 rounded-[32px] border border-white/5 space-y-3">
-                      <div className="text-center mb-1">
-                        <p className="text-[10px] font-mono text-white/30 uppercase tracking-widest">Cross-chain transfer in progress</p>
-                        <p className="text-[9px] font-mono text-white/15 mt-1">Do not close this window</p>
-                      </div>
-
-                      {/* Step list */}
-                      {[
-                        { id: 'switching',  label: 'Switch Network',        desc: 'Connecting to Horizen EON' },
-                        { id: 'approving',  label: 'Approve Token Spend',   desc: 'Sign approval in wallet' },
-                        { id: 'bridging',   label: 'Submit Bridge Tx',      desc: 'Confirm transaction in wallet' },
-                        { id: 'waiting',    label: 'Waiting for Delivery',  desc: 'Cross-chain relay in progress (~2–5 min)' },
-                      ].map((step, i) => {
-                        const phases = ['switching', 'approving', 'bridging', 'waiting', 'done'];
-                        const currentIdx = phases.indexOf(bridgePhase);
-                        const stepIdx = phases.indexOf(step.id);
-                        const isDone = currentIdx > stepIdx;
-                        const isCurrent = bridgePhase === step.id;
-                        return (
-                          <div key={step.id}
-                            className={`flex items-center gap-4 p-3 rounded-2xl border transition-all duration-300 ${
-                              isCurrent ? 'bg-indigo-500/10 border-indigo-500/20' :
-                              isDone    ? 'bg-emerald-500/5 border-emerald-500/10' :
-                              'opacity-25 border-transparent'
-                            }`}>
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 border-2 ${
-                              isDone    ? 'bg-emerald-500 border-emerald-500' :
-                              isCurrent ? 'border-indigo-500 text-indigo-400' :
-                              'border-white/10 text-white/20'
-                            }`}>
-                              {isDone
-                                ? <Check size={16} className="text-black" />
-                                : isCurrent
-                                  ? <Loader2 size={16} className="animate-spin" />
-                                  : <span className="text-[11px] font-bold">{i + 1}</span>
-                              }
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-[11px] font-black uppercase tracking-widest ${isCurrent ? 'text-white' : isDone ? 'text-emerald-400' : 'text-white/20'}`}>
-                                {step.label}
-                              </p>
-                              <p className="text-[9px] font-mono text-white/25 mt-0.5 truncate">{step.desc}</p>
-                            </div>
-                            {isCurrent && bridgePhase === 'waiting' && (
-                              <span className="text-[9px] font-mono text-indigo-400 animate-pulse">~2-5 min</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </motion.div>
+        {/* CONNECT STATUS */}
+        {view === 'CONNECT_STATUS' && (
+          <motion.div key="conn" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pt-8 space-y-6 text-center flex flex-col items-center">
+            <div className="relative w-20 h-20">
+              {connectStep === 'success' ? (
+                <div className="w-full h-full bg-emerald-500/10 rounded-full flex items-center justify-center border border-emerald-500/25">
+                  <Check size={28} className="text-emerald-400" />
+                </div>
               ) : (
-                <motion.div key="pa" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="flex flex-col h-full">
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-2xl font-black italic uppercase tracking-tighter">Registry</h2>
-                    <button
-                      onClick={async () => {
-                        if (!address || !signTypedDataAsync) return;
-                        setCreating(true);
-                        try {
-                          // Full proxy creation flow — all 3 steps required to save the key
-                          await apiRegister(address, signTypedDataAsync);
-                          const { stealthAddress } = await apiGenerateAddress(address);
-                          const { stealthPrivateKey } = await apiDeriveKey(address, stealthAddress, signTypedDataAsync);
-                          // Save key + address — walletController NEEDS these to sign
-                          localStorage.setItem("nyra_eoa", address);
-                          localStorage.setItem("nyra_active_stealth", stealthAddress);
-                          localStorage.setItem("nyra_stealth_key", stealthPrivateKey);
-                          sessionStorage.setItem("nyra_stealth_address", stealthAddress);
-                          sessionStorage.setItem("nyra_stealth_key", stealthPrivateKey);
-                          console.log("[Nyra] Proxy created + key saved:", stealthAddress);
-                        } catch (e) {
-                          console.error("[Nyra] Create failed:", e);
-                        } finally {
-                          await loadData();
-                          setCreating(false);
-                        }
-                      }}
-                      className="p-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10"
-                    >
-                      {creating ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />}
-                    </button>
-                  </div>
-                  <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2">
-                    {proxies.map((p) => (
-                      <div
-                        key={p.address}
-                        onClick={() => { setSelectedProxy(p); setView('ACTIONS'); }}
-                        className={`p-6 rounded-[32px] border cursor-pointer transition-all flex items-center justify-between group ${
-                          selectedProxy?.address === p.address ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-black/20 border-white/5 hover:border-white/10'
-                        }`}
-                      >
-                        <div className="flex items-center gap-5">
-                          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm ${selectedProxy?.address === p.address ? 'bg-indigo-500' : 'bg-white/5 text-white/20'}`}>
-                            {p.num}
-                          </div>
-                          <div>
-                            <div className="font-mono text-sm opacity-60">{p.address.slice(0, 10)}...</div>
-                            <div className="flex items-center gap-2 mt-1">
-                              <div className={`w-1 h-1 rounded-full ${p.connected ? 'bg-emerald-400' : 'bg-white/10'}`} />
-                              <span className="text-[10px] font-bold text-white/20 uppercase">{p.connected ? 'L1 ACTIVE' : 'INACTIVE'}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <ChevronRight className={`transition-transform ${selectedProxy?.address === p.address ? 'text-indigo-400 translate-x-1' : 'opacity-10 group-hover:opacity-100'}`} />
-                      </div>
-                    ))}
-                  </div>
+                <>
+                  <svg className="w-20 h-20 animate-spin text-purple-500/25" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="226" strokeDashoffset="150" />
+                  </svg>
+                  <Link2 className="absolute inset-0 m-auto text-purple-400 animate-pulse" size={22} />
+                </>
+              )}
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-white">
+                {connectStep === 'pairing' ? 'Pairing Node' : connectStep === 'approving' ? 'Awaiting Auth' : connectStep === 'success' ? 'Connected!' : 'Connecting...'}
+              </h4>
+              <p className="text-xs text-gray-500 mt-1.5">
+                {connectStep === 'pairing' ? 'Establishing P2P relay...' : connectStep === 'approving' ? 'Hyperliquid requesting authentication...' : connectStep === 'success' ? 'Session active. Handshake complete.' : 'Please wait...'}
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* SIGNING REQUIRED */}
+        {view === 'SIGNING_REQUIRED' && pendingReq && (
+          <motion.div key="sign" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="space-y-5">
+            <div className="text-center">
+              <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto mb-4">
+                <Shield size={24} className="text-purple-400" />
+              </div>
+              <h3 className="text-base font-semibold text-white">Identity Authentication</h3>
+              <p className="text-xs text-gray-500 mt-1.5 px-4">Hyperliquid requires a signature to initialise your private identity.</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-white/2 border border-white/6 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-600 font-medium uppercase tracking-wider">Protocol Action</span>
+                <Badge variant="outline" className="text-[9px] border-purple-500/30 text-purple-400 font-mono">
+                  {pendingReq.params.request.method}
+                </Badge>
+              </div>
+              <div className="p-3 rounded-xl bg-black/30 border border-white/5 font-mono text-[9px] text-gray-600">
+                AUTHENTICATE_SESSION_STEALTH_V2:ENABLE_TRADING
+              </div>
+            </div>
+            <div className="space-y-2">
+              <motion.button onClick={handleApproveSign}
+                className="w-full h-11 btn-purple rounded-2xl text-white font-medium text-sm"
+                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                Confirm & Sign
+              </motion.button>
+              <button onClick={handleRejectSign} className="w-full py-2 text-xs text-gray-600 hover:text-gray-400 transition-colors">
+                Reject Request
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+      </AnimatePresence>
+    </div>
+  );
+
+  // ─── BRIDGE TAB CONTENT ────────────────────────────────────
+  const BridgeContent = () => (
+    <motion.div key="bridge" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-5 h-full">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Funding</h2>
+          <p className="text-xs text-gray-500 mt-0.5 font-mono">Stargate V2 Cross-Chain</p>
+        </div>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20">
+          <Fuel size={12} className="text-purple-400" />
+          <span className="text-[10px] text-purple-400 font-medium">Cross-chain</span>
+        </div>
+      </div>
+
+      {bridgePhase === 'idle' || bridgePhase === 'error' ? (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+          {/* From */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <label className="text-xs text-gray-500">From</label>
+              <span className="text-[10px] text-purple-400 font-medium">Wallet: ${Number(walletBal?.formatted || 0).toFixed(2)}</span>
+            </div>
+            <div className={`flex items-center gap-3 p-4 rounded-2xl bg-white/3 border transition-all ${amountError && activeTab === 'BRIDGE' ? 'border-red-500/40' : 'border-white/7 hover:border-purple-500/25'}`}>
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">HZ</div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white">USDC.e</p>
+                <p className="text-xs text-gray-500">Horizen EON</p>
+              </div>
+              <div className="ml-auto flex flex-col items-end gap-1">
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  placeholder="0"
+                  className={`bg-transparent text-right text-2xl font-semibold w-24 outline-none placeholder:text-gray-700 ${amountError && activeTab === 'BRIDGE' ? 'text-red-400' : 'text-white'}`}
+                />
+                <button onClick={() => setAmount(walletBal?.formatted || '0')}
+                  className="text-[9px] text-purple-400 font-bold hover:text-purple-300 transition-colors">
+                  USE MAX
+                </button>
+              </div>
+            </div>
+            <AnimatePresence>
+              {amountError && activeTab === 'BRIDGE' && (
+                <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="flex items-center gap-1.5 text-red-400 px-1">
+                  <AlertCircle size={11} /><p className="text-[11px] font-medium">{amountError}</p>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
 
-          {/* 3. TERMINAL PANE */}
-          <AnimatePresence>
-            {selectedProxy && (
+          {/* Arrow */}
+          <div className="flex justify-center">
+            <div className="w-8 h-8 rounded-full bg-white/5 border border-white/8 flex items-center justify-center">
+              <ArrowDownLeft size={14} className="text-gray-400" />
+            </div>
+          </div>
+
+          {/* To */}
+          <div className="space-y-2">
+            <label className="text-xs text-gray-500">To</label>
+            <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/3 border border-white/7">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">ARB</div>
+              <div>
+                <p className="text-sm font-medium text-white">USDC</p>
+                <p className="text-xs text-gray-500">Arbitrum One</p>
+              </div>
+              <div className="ml-auto text-gray-400 text-sm tabular-nums">~{amount || '0'}</div>
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-600 text-center">Bridge from Horizen EON → Arbitrum · ~2–5 min</p>
+
+          {bridgePhase === 'error' && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-red-500/8 border border-red-500/20">
+              <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+              <p className="text-xs text-red-400">{bridgeError}</p>
+            </div>
+          )}
+
+          <motion.button onClick={handleBridge} disabled={!!amountError || !amount || amount === '0'}
+            className="w-full h-12 rounded-2xl btn-purple text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+            Bridge Liquidity
+          </motion.button>
+        </motion.div>
+
+      ) : bridgePhase === 'done' ? (
+        <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center justify-center flex-1 gap-6 py-8">
+          <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center">
+            <Check size={28} className="text-emerald-400" />
+          </div>
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-white mb-2">Bridge Complete</h3>
+            <p className="text-sm text-gray-400">Funds delivered. You can now deposit to any proxy account.</p>
+          </div>
+          <button onClick={() => { setBridgePhase('idle'); setBridgeError(null); }}
+            className="px-6 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/8 transition-all">
+            Bridge More
+          </button>
+        </motion.div>
+
+      ) : (
+        /* Steps */
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500 text-center mb-4">Cross-chain transfer in progress · Do not close this window</p>
+          {[
+            { id: 'switching', label: 'Switch Network',       desc: 'Connecting to Horizen EON' },
+            { id: 'approving', label: 'Approve Token Spend',  desc: 'Sign approval in wallet' },
+            { id: 'bridging',  label: 'Submit Bridge',        desc: 'Confirm in wallet' },
+            { id: 'waiting',   label: 'Waiting for Delivery', desc: '~2–5 min' },
+          ].map((step, i) => {
+            const phases = ['switching','approving','bridging','waiting','done'];
+            const isDone = phases.indexOf(bridgePhase) > phases.indexOf(step.id);
+            const isCurrent = bridgePhase === step.id;
+            return (
+              <div key={step.id} className={`flex items-center gap-4 p-3.5 rounded-2xl border transition-all duration-300 ${
+                isCurrent ? 'bg-purple-500/8 border-purple-500/25' : isDone ? 'bg-emerald-500/5 border-emerald-500/15' : 'opacity-30 border-transparent'
+              }`}>
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 border-2 ${
+                  isDone ? 'bg-emerald-500 border-emerald-500' : isCurrent ? 'border-purple-500 text-purple-400' : 'border-white/10 text-white/20'
+                }`}>
+                  {isDone ? <Check size={14} className="text-white" /> : isCurrent ? <Loader2 size={14} className="animate-spin" /> : <span className="text-[10px] font-bold">{i + 1}</span>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-semibold ${isCurrent ? 'text-white' : isDone ? 'text-emerald-400' : 'text-white/20'}`}>{step.label}</p>
+                  <p className="text-[10px] text-gray-600 mt-0.5">{step.desc}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </motion.div>
+  );
+
+  // ─── WITHDRAW TEE CONTENT ──────────────────────────────────
+  const WithdrawTeeContent = () => (
+    <motion.div key="tee" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-5">
+      <div>
+        <h2 className="text-xl font-semibold text-white">TEE Withdrawal</h2>
+        <p className="text-xs text-gray-500 mt-0.5">Move undeposited funds to Arbitrum</p>
+      </div>
+      <div className="p-4 rounded-2xl bg-white/3 border border-white/7 space-y-3">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] text-gray-500 uppercase tracking-wider">Available in TEE</span>
+          <span className="text-[10px] text-purple-400 font-mono font-semibold">${Number(serverBalance).toFixed(2)} USDC</span>
+        </div>
+        <AmountInput
+          value={amount} onChange={setAmount}
+          max={Number(serverBalance).toFixed(2)}
+          error={activeTab === 'WITHDRAW_TEE' ? amountError : null}
+          suffix="USDC"
+        />
+      </div>
+      <motion.button onClick={handleTeeWithdraw} disabled={!!amountError || !amount || amount === '0'}
+        className="w-full h-12 rounded-2xl btn-purple text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+        Withdraw to Arbitrum
+      </motion.button>
+    </motion.div>
+  );
+
+  // ─── PROXY LIST ────────────────────────────────────────────
+  const ProxyList = () => (
+    <motion.div key="pa" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="flex flex-col h-full">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Registry</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Your stealth proxy accounts</p>
+        </div>
+        <motion.button
+          onClick={async () => {
+            if (!address || !signTypedDataAsync) return;
+            setCreating(true);
+            try {
+              await apiRegister(address, signTypedDataAsync);
+              const { stealthAddress } = await apiGenerateAddress(address);
+              const { stealthPrivateKey } = await apiDeriveKey(address, stealthAddress, signTypedDataAsync);
+              localStorage.setItem('nyra_eoa', address);
+              localStorage.setItem('nyra_active_stealth', stealthAddress);
+              localStorage.setItem('nyra_stealth_key', stealthPrivateKey);
+              sessionStorage.setItem('nyra_stealth_address', stealthAddress);
+              sessionStorage.setItem('nyra_stealth_key', stealthPrivateKey);
+              setNewestProxyAddress(stealthAddress);
+              setTimeout(() => setNewestProxyAddress(null), 30000);
+            } catch (e) { console.error(e); }
+            finally { await loadData(); setCreating(false); }
+          }}
+          className="w-9 h-9 rounded-full bg-purple-500/10 border border-purple-500/25 flex items-center justify-center text-purple-400 hover:bg-purple-500/20 transition-all"
+          whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}
+        >
+          {creating ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+        </motion.button>
+      </div>
+
+      <div className="space-y-2 overflow-y-auto max-h-[420px] pr-1 custom-scrollbar">
+        {loading ? (
+          Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-16 rounded-2xl shimmer" />)
+        ) : proxies.length === 0 ? (
+          <div className="text-center py-12 text-gray-600">
+            <Shield size={32} className="mx-auto mb-3 opacity-20" />
+            <p className="text-sm">No proxy accounts yet</p>
+            <p className="text-xs mt-1">Click + to create your first stealth proxy</p>
+          </div>
+        ) : (
+          proxies.map((p) => {
+            const isNew = newestProxyAddress === p.address;
+            const isRefreshing = refreshingBalance === p.address;
+            const refreshProxyBalance = async (e: React.MouseEvent, proxy: Proxy) => {
+              e.stopPropagation();
+              if (isRefreshing) return;
+              setRefreshingBalance(proxy.address);
+              try {
+                const state = await getHLUserState(proxy.address);
+                const newBalance = state?.marginSummary?.accountValue ?? '0';
+                const newPnl = state?.marginSummary?.unrealizedPnl ?? '0';
+                const newConnected = Number(newBalance) > 0;
+                const updated = { ...proxy, balance: newBalance, pnl: newPnl, connected: newConnected };
+                setProxies(prev => prev.map(x => x.address === proxy.address ? updated : x));
+                if (selectedProxy?.address === proxy.address) setSelectedProxy(updated);
+              } catch (e) { console.error(e); }
+              finally { setRefreshingBalance(null); }
+            };
+            return (
               <motion.div
-                initial={{ width: 0, opacity: 0 }} animate={{ width: 400, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-                className="bg-[#0D0E14] border-l border-white/5 flex flex-col p-10 relative overflow-hidden"
+                key={p.address} layout
+                initial={isNew ? { opacity: 0, y: -12, scale: 0.97 } : false}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+                onClick={() => openProxy(p)}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between group card-hover ${
+                  selectedProxy?.address === p.address ? 'bg-purple-500/10 border-purple-500/25'
+                  : isNew ? 'bg-emerald-500/5 border-emerald-500/20'
+                  : 'bg-white/2 border-white/6 hover:border-white/12'
+                }`}
               >
-                {/* Terminal Header */}
-                <div className="flex items-center justify-between mb-10">
-                  <div>
-                    <h3 className="text-[10px] font-black uppercase text-indigo-400 tracking-[0.3em] mb-1">Terminal_Output</h3>
-                    <p className="font-mono text-[9px] opacity-20 truncate w-[200px]">{selectedProxy.address}</p>
-                  </div>
-                  <button onClick={() => { setSelectedProxy(null); setView('ACTIONS'); }} className="p-2 hover:bg-white/5 rounded-full">
-                    <X size={16} />
-                  </button>
-                </div>
-
-                <div className="space-y-8 flex-1">
-                  <AnimatePresence mode="wait">
-
-                    {/* ACTIONS */}
-                    {view === 'ACTIONS' && (
-                      <motion.div key="actions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
-
-                        {/* Balance card — HL account value for this proxy */}
-                        <div className="p-6 bg-white/[0.02] border border-white/5 rounded-[32px] space-y-3">
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <span className="text-[10px] font-bold text-white/10 uppercase tracking-[0.2em]">HL Account Value</span>
-                              <p className="text-[8px] font-mono text-white/15 mt-0.5">This proxy on Hyperliquid</p>
-                            </div>
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${selectedProxy.connected ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-white/5 text-white/20 border border-white/10'}`}>
-                              {selectedProxy.connected ? '● SYNCED' : '○ STANDBY'}
-                            </span>
-                          </div>
-                          <div className="text-4xl font-black">
-                            {Number(selectedProxy.balance) > 0 ? `$${Number(selectedProxy.balance).toLocaleString()}` : <span className="text-white/20 text-2xl">No position</span>}
-                          </div>
-                          {Number(selectedProxy.balance) > 0 && (
-                            <div className={`text-[10px] font-bold ${Number(selectedProxy.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {Number(selectedProxy.pnl) >= 0 ? '+' : ''}{selectedProxy.pnl} Unrealized PnL
-                            </div>
-                          )}
-                        </div>
-
-                        {selectedProxy.connected ? (
-                          /* ── CONNECTED STATE: show full action grid ── */
-                          <motion.div
-                            key="connected-actions"
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="space-y-5"
-                          >
-                            {/* Active session banner */}
-                            <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-emerald-500/5 border border-emerald-500/10">
-                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              <p className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider flex-1">Session Active — Trading Enabled</p>
-                            </div>
-
-                            {/* Deposit + Withdraw */}
-                            <div className="grid grid-cols-2 gap-3">
-                              <ActionButton icon={<ArrowDownLeft />} label="Deposit" sub="Fund account" onClick={() => setView('DEPOSIT_INPUT')} />
-                              <ActionButton icon={<ArrowUpRight />} label="Withdraw" sub="Extract funds" onClick={() => setView('WITHDRAW_INPUT')} />
-                            </div>
-
-                            {/* Re-pair option */}
-                            <div className="pt-4 border-t border-white/5">
-                              <div className="space-y-2">
-                                <Input
-                                  value={wcUri}
-                                  onChange={e => setWcUri(e.target.value)}
-                                  placeholder="wc:... (re-pair session)"
-                                  className="bg-white/5 border-white/10 h-10 rounded-xl font-mono text-[10px]"
-                                />
-                                <button
-                                  onClick={() => handleConnect()}
-                                  disabled={!wcUri.startsWith('wc:')}
-                                  className="w-full h-10 rounded-xl text-[10px] font-bold uppercase tracking-widest disabled:opacity-20 transition-all text-white/30 hover:text-white/60 border border-white/5 hover:border-white/10"
-                                >
-                                  Re-pair Session
-                                </button>
-                              </div>
-                            </div>
-                          </motion.div>
-                        ) : (
-                          /* ── DISCONNECTED STATE: connect is the primary CTA ── */
-                          <motion.div
-                            key="disconnected-actions"
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="space-y-5"
-                          >
-                            {/* Deposit/Withdraw available even without HL session */}
-                            <div className="grid grid-cols-2 gap-3">
-                              <ActionButton icon={<ArrowDownLeft />} label="Deposit" sub="From server" onClick={() => setView('DEPOSIT_INPUT')} />
-                              <ActionButton icon={<ArrowUpRight />} label="Withdraw" sub="Extract funds" onClick={() => setView('WITHDRAW_INPUT')} />
-                            </div>
-
-                            <div className="pt-4 border-t border-white/5 space-y-3">
-                              <div className="flex justify-between px-1">
-                                <span className="text-[10px] font-black uppercase text-white/20 tracking-widest">Connect Hyperliquid</span>
-                              </div>
-                              <Input
-                                value={wcUri}
-                                onChange={e => setWcUri(e.target.value)}
-                                placeholder="wc:abc... (paste from Hyperliquid)"
-                                className="bg-white/5 border-white/10 h-12 rounded-2xl font-mono text-[11px]"
-                              />
-                              <Button
-                                onClick={() => handleConnect()}
-                                disabled={!wcUri.startsWith('wc:')}
-                                className="w-full h-14 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white font-bold uppercase text-[10px] tracking-widest rounded-2xl"
-                              >
-                                Connect to HL
-                              </Button>
-                            </div>
-                          </motion.div>
-                        )}
-                      </motion.div>
-                    )}
-
-                    {/* DEPOSIT INPUT */}
-                    {view === 'DEPOSIT_INPUT' && (
-                      <motion.div key="dep_in" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6 pt-4">
-                        <div className="text-center mb-6"><h3 className="text-lg font-bold italic uppercase">Deposit Funds</h3></div>
-                        <div className="p-8 bg-black/40 border border-white/5 rounded-3xl space-y-4">
-                          <div className="text-[10px] text-indigo-400 font-black uppercase">Amount</div>
-                          <Input value={amount} onChange={e => setAmount(e.target.value)} className="h-10 bg-transparent border-none text-2xl font-bold p-0 focus-visible:ring-0" />
-                          <div className="text-[10px] text-white/20 font-mono">Available on Server: ${(Number(serverBalance) / 1e6).toFixed(2)}</div>
-                        </div>
-                        <div className="flex gap-3">
-                          <Button variant="ghost" onClick={() => setView('ACTIONS')} className="flex-1 rounded-2xl h-14">Back</Button>
-                          <Button onClick={handleDepositFlow} className="flex-1 bg-indigo-500 rounded-2xl h-14 font-black uppercase text-[10px]">Settle Now</Button>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {/* WITHDRAW INPUT */}
-                    {view === 'WITHDRAW_INPUT' && (
-                      <motion.div key="with_in" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6 pt-4">
-                        <div className="text-center mb-6"><h3 className="text-lg font-bold italic uppercase tracking-tighter">Extract Assets</h3></div>
-                        <div className="space-y-4">
-                          <div className="p-5 bg-black/40 border border-white/5 rounded-2xl">
-                            <label className="text-[9px] text-white/30 uppercase font-black mb-2 block">Destination Address</label>
-                            <Input value={destination} onChange={e => setDestination(e.target.value)} placeholder="0x..." className="bg-transparent border-none p-0 h-8 font-mono text-sm focus-visible:ring-0" />
-                          </div>
-                          <div className="p-5 bg-black/40 border border-white/5 rounded-2xl">
-                            <label className="text-[9px] text-white/30 uppercase font-black mb-2 block">Amount to Withdraw</label>
-                            <Input value={amount} onChange={e => setAmount(e.target.value)} className="bg-transparent border-none p-0 h-8 font-bold text-xl focus-visible:ring-0" />
-                          </div>
-                        </div>
-                        <div className="flex gap-3 pt-4">
-                          <Button variant="ghost" onClick={() => setView('ACTIONS')} className="flex-1 rounded-2xl h-14">Cancel</Button>
-                          <Button onClick={handleWithdrawFlow} className="flex-1 bg-indigo-500 rounded-2xl h-14 font-black uppercase text-[10px]">Withdraw</Button>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {/* DEPOSIT / WITHDRAW STEPS */}
-                    {(view === 'DEPOSIT_STEPS' || view === 'WITHDRAW_STEPS') && (
-                      <motion.div key="steps" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-10 pt-6 text-center">
-                        <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                          <motion.div className="h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]" animate={{ width: `${progress}%` }} />
-                        </div>
-                        <div className="space-y-4">
-                          {STEPS.map((s, i) => {
-                            const isCurrent = txStep === s.id;
-                            const isDone = progress > (i + 1) * 30 || txStep === 'success';
-                            return (
-                              <div key={s.id} className={`flex items-center gap-4 p-5 rounded-3xl border transition-all ${isCurrent ? 'bg-indigo-500/10 border-indigo-500/20' : 'opacity-30 border-transparent'}`}>
-                                <div className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center ${isDone ? 'bg-emerald-500 border-emerald-500' : isCurrent ? 'border-indigo-500 text-indigo-400' : 'border-white/10'}`}>
-                                  {isDone ? <Check size={18} className="text-black" /> : <span className="text-xs font-bold">{i + 1}</span>}
-                                </div>
-                                <div className="text-left flex-1">
-                                  <div className={`text-xs font-black uppercase tracking-widest ${isCurrent ? 'text-white' : 'text-white/20'}`}>{s.label}</div>
-                                  <div className="text-[10px] font-mono text-white/20 mt-1">{s.desc}</div>
-                                </div>
-                                {isCurrent && <Loader2 className="animate-spin text-indigo-400" size={16} />}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {/* CONNECT STATUS */}
-                    {view === 'CONNECT_STATUS' && (
-                      <motion.div key="conn_steps" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pt-10 space-y-8 text-center">
-                        <div className="relative w-20 h-20 mx-auto">
-                          {connectStep === 'success' ? (
-                            <div className="w-full h-full bg-emerald-500/10 rounded-full flex items-center justify-center border border-emerald-500/30">
-                              <Check size={32} className="text-emerald-400" />
-                            </div>
-                          ) : (
-                            <>
-                              <Loader2 className="w-full h-full text-indigo-400 animate-spin opacity-20" size={80} />
-                              <Link2 className="absolute inset-0 m-auto text-indigo-400 animate-pulse" size={24} />
-                            </>
-                          )}
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black uppercase tracking-[0.3em] italic">
-                            {connectStep === 'pairing' ? 'Pairing Node' :
-                              connectStep === 'approving' ? 'Awaiting HL Auth' :
-                              connectStep === 'success' ? 'Identity Secured' : 'Connecting...'}
-                          </h4>
-                          <p className="text-[10px] text-white/20 font-mono mt-2 uppercase px-10">
-                            {connectStep === 'pairing' ? 'Establishing P2P Relay...' :
-                              connectStep === 'approving' ? 'Hyperliquid is requesting authentication...' :
-                              connectStep === 'success' ? 'Handshake complete. Session active.' :
-                              'Please wait...'}
-                          </p>
-                        </div>
-                        {connectStep === 'approving' && (
-                          <div className="flex items-center justify-center gap-2 font-mono text-[9px] text-indigo-400 animate-pulse uppercase tracking-[2px] pt-4">
-                            <span className="w-1 h-1 bg-indigo-400 rounded-full" />
-                            Waiting for authentication request...
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-
-                    {/* ── SIGNING REQUIRED ── */}
-                    {view === 'SIGNING_REQUIRED' && pendingReq && (
-                      <motion.div
-                        key="sign_req"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="space-y-8 pt-4"
-                      >
-                        <div className="text-center">
-                          <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
-                            <Shield className="text-amber-500" size={28} />
-                          </div>
-                          <h3 className="text-lg font-black italic uppercase tracking-tighter">Identity Authentication</h3>
-                          <p className="text-[10px] text-white/30 font-mono mt-2 px-8 uppercase leading-relaxed">
-                            Hyperliquid requires a signature to initialise your private identity.
-                          </p>
-                        </div>
-
-                        <div className="p-6 bg-white/[0.03] border border-white/5 rounded-[32px] space-y-4">
-                          <div className="flex items-center justify-between px-1">
-                            <span className="text-[9px] font-black uppercase text-white/20 tracking-widest">Protocol Action</span>
-                            <Badge variant="outline" className="text-[9px] border-amber-500/30 text-amber-500 font-mono">
-                              {pendingReq.params.request.method}
-                            </Badge>
-                          </div>
-                          <div className="p-4 bg-black/40 rounded-2xl border border-white/5 font-mono text-[9px] text-white/30 leading-relaxed">
-                            AUTHENTICATE_SESSION_STEALTH_V2:ENABLE_TRADING
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-3">
-                          {/* 
-                            FIXED: onClick now calls handleApproveSign() instead of 
-                            inline logic. handleApproveSign() does:
-                            1. Marks the ref so the null-broadcast from resolveRequest doesn't re-trigger
-                            2. Clears pendingReq + transitions to success view FIRST (instant visual feedback)
-                            3. Then calls resolveRequest(true) to unblock walletController
-                            This eliminates the "stuck on awaiting sign" issue entirely.
-                          */}
-                          <Button
-                            onClick={handleApproveSign}
-                            className="h-16 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs tracking-[0.2em] rounded-[24px]"
-                          >
-                            Confirm & Sign
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            onClick={handleRejectSign}
-                            className="text-[10px] text-white/20 uppercase font-black"
-                          >
-                            Reject Request
-                          </Button>
-                        </div>
-                      </motion.div>
-                    )}
-
-                  </AnimatePresence>
-                </div>
-
-                {/* ERROR/PROCESSING HUD overlay — only for bridge/deposit/withdraw, NOT for connect flow */}
-                <AnimatePresence>
-                  {txStatus !== 'IDLE' && view !== 'SIGNING_REQUIRED' && view !== 'CONNECT_STATUS' && (
-                    <motion.div
-                      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                      className="absolute inset-0 bg-[#0D0E14]/95 z-[60] flex flex-col items-center justify-center p-12 text-center"
-                    >
-                      {txStatus === 'PROCESSING' ? (
-                        <div className="space-y-4">
-                          <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mx-auto" />
-                          <p className="text-[10px] font-black uppercase tracking-[0.3em] italic">Syncing Ledger...</p>
-                        </div>
-                      ) : txStatus === 'SUCCESS' ? (
-                        <div className="space-y-4">
-                          <div className="w-14 h-14 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto border border-emerald-500/30">
-                            <Check className="text-emerald-400" />
-                          </div>
-                          <h4 className="text-xs font-black uppercase tracking-widest">Protocol Sync Complete</h4>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          <AlertCircle className="text-red-500 mx-auto" />
-                          <p className="text-[10px] text-red-400 font-mono px-4 leading-relaxed">{error}</p>
-                          <Button onClick={() => { setTxStatus('IDLE'); setView('ACTIONS'); }} variant="ghost" className="text-[10px] font-bold uppercase text-white/20 mt-4">
-                            Close Terminal
-                          </Button>
-                        </div>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                    selectedProxy?.address === p.address ? 'bg-purple-500 text-white'
+                    : isNew ? 'bg-emerald-500/20 text-emerald-400'
+                    : 'bg-white/5 text-white/30'
+                  }`}>{p.num}</div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-gray-400 truncate">{p.address.slice(0, 12)}...</span>
+                      {isNew && (
+                        <span className="new-badge inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-bold text-emerald-400 flex-shrink-0">
+                          ✦ NEW
+                        </span>
                       )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${p.connected ? 'bg-emerald-400' : 'bg-white/15'}`} />
+                      <span className={`text-[10px] font-medium ${p.connected ? 'text-emerald-400' : 'text-white/25'}`}>
+                        {p.connected ? 'Active' : 'Inactive'}
+                      </span>
+                      {Number(p.balance) > 0 && <span className="text-[10px] text-purple-400 ml-1">${Number(p.balance).toFixed(2)}</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                  <motion.button
+                    onClick={(e) => refreshProxyBalance(e, p)} title="Refresh balance"
+                    className="w-7 h-7 rounded-lg bg-white/4 hover:bg-purple-500/15 border border-white/6 hover:border-purple-500/30 flex items-center justify-center text-white/20 hover:text-purple-400 transition-all"
+                    whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                    <RefreshCw size={11} className={isRefreshing ? 'spin-once text-purple-400' : ''} />
+                  </motion.button>
+                  <ChevronRight size={15} onClick={() => openProxy(p)}
+                    className={`transition-all cursor-pointer ${selectedProxy?.address === p.address ? 'text-purple-400 translate-x-0.5' : 'text-white/15 group-hover:text-white/40'}`} />
+                </div>
               </motion.div>
-            )}
+            );
+          })
+        )}
+      </div>
+    </motion.div>
+  );
+
+  // ─── RENDER ────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen text-white relative overflow-hidden" style={{ background: '#0d0a12' }}>
+      <div className="fixed inset-0 pointer-events-none grid-pattern" />
+      <Header onNavigate={onNavigate} currentPage="dashboard" />
+
+      {/* ══════════════════════════════════════════════════════
+          MOBILE LAYOUT  (< md)
+          Full-screen stacked views with bottom tab bar
+         ══════════════════════════════════════════════════════ */}
+      <div className="md:hidden min-h-screen flex flex-col pt-14">
+
+        {/* Mobile: Terminal sheet (slides up over list when proxy selected) */}
+        <AnimatePresence>
+          {mobileShowTerminal && selectedProxy && (
+            <motion.div
+              key="mobile-terminal"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 32 }}
+              className="fixed inset-0 z-[90] flex flex-col glass-terminal pt-safe"
+              style={{ paddingTop: 'env(safe-area-inset-top, 56px)' }}
+            >
+              {/* Sheet header */}
+              <div className="flex items-center gap-3 px-4 py-4 border-b border-white/5 flex-shrink-0">
+                <motion.button
+                  onClick={closeTerminal}
+                  className="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white"
+                  whileTap={{ scale: 0.9 }}
+                >
+                  <ChevronLeft size={16} />
+                </motion.button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${selectedProxy.connected ? 'bg-emerald-400' : 'bg-white/20'}`} />
+                    <p className="text-xs font-semibold text-white truncate">{selectedProxy.address.slice(0, 18)}…</p>
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-0.5">
+                    {selectedProxy.connected ? 'Session Active' : 'Proxy Account'}
+                  </p>
+                </div>
+                {/* Inline balance badge */}
+                {Number(selectedProxy.balance) > 0 && (
+                  <div className="flex-shrink-0 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/25">
+                    <span className="text-xs font-semibold text-purple-300">${Number(selectedProxy.balance).toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Sheet content */}
+              <div className="flex-1 overflow-y-auto px-4 py-5 custom-scrollbar">
+                {/* Back button for sub-menus like Deposit Input */}
+                {view !== 'ACTIONS' && view !== 'DEPOSIT_STEPS' && view !== 'WITHDRAW_STEPS' && (
+                  <button onClick={() => setView('ACTIONS')} className="flex items-center gap-1.5 text-[11px] text-gray-500 mb-4 uppercase font-bold">
+                    <ChevronLeft size={13} /> Back
+                  </button>
+                )}
+                <TerminalContent />
+              </div>
+
+              {/* TX Status overlay for mobile */}
+              <AnimatePresence>
+                {txStatus !== 'IDLE' && view !== 'SIGNING_REQUIRED' && view !== 'CONNECT_STATUS' && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 text-center"
+                    style={{ background: 'rgba(12, 8, 22, 0.96)', backdropFilter: 'blur(8px)' }}>
+                    {txStatus === 'PROCESSING' ? (
+                      <div className="space-y-4">
+                        <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto">
+                          <Loader2 className="text-purple-400 animate-spin" size={24} />
+                        </div>
+                        <p className="text-sm text-gray-300">Processing…</p>
+                      </div>
+                    ) : txStatus === 'SUCCESS' ? (
+                      <div className="space-y-4">
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
+                          <Check className="text-emerald-400" size={24} />
+                        </div>
+                        <p className="text-sm text-gray-300 font-medium">Success</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <AlertCircle className="text-red-400 mx-auto" size={32} />
+                        <p className="text-sm text-red-400">{error}</p>
+                        <button onClick={() => { setTxStatus('IDLE'); setView('ACTIONS'); }}
+                          className="text-xs text-gray-500 hover:text-gray-300 transition-colors">Dismiss</button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Mobile: Main content area */}
+        <div className="flex-1 px-4 pt-4 pb-24 overflow-y-auto">
+          <AnimatePresence mode="wait">
+            {activeTab === 'BRIDGE' && <BridgeContent key="m-bridge" />}
+            {activeTab === 'WITHDRAW_TEE' && <WithdrawTeeContent key="m-tee" />}
+            {activeTab === 'PA' && <ProxyList key="m-pa" />}
           </AnimatePresence>
+        </div>
+
+        {/* Mobile bottom tab bar */}
+        <div className="fixed bottom-0 left-0 right-0 z-[80] glass border-t border-white/8"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          <div className="flex">
+            {([
+              { id: 'BRIDGE',       icon: <ArrowRightLeft size={18} />, label: 'Bridge' },
+              { id: 'WITHDRAW_TEE', icon: <ArrowUpRight size={18} />,   label: 'Withdraw' },
+              { id: 'PA',           icon: <Layers size={18} />,         label: 'Accounts' },
+            ] as { id: MainTab; icon: React.ReactNode; label: string }[]).map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  if (tab.id === 'PA') { setActiveTab('PA'); handleSwitchToPA(); }
+                  else setActiveTab(tab.id);
+                  setMobileShowTerminal(false);
+                }}
+                className={`flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-colors ${
+                  activeTab === tab.id && !mobileShowTerminal ? 'text-purple-400' : 'text-gray-600'
+                }`}
+              >
+                <span className={`transition-transform ${activeTab === tab.id && !mobileShowTerminal ? 'scale-110' : 'scale-100'}`}>
+                  {tab.icon}
+                </span>
+                {tab.label}
+                {activeTab === tab.id && !mobileShowTerminal && (
+                  <motion.div layoutId="mobile-tab-indicator" className="absolute bottom-0 w-8 h-0.5 bg-purple-500 rounded-full" />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════
+          DESKTOP LAYOUT  (≥ md)
+          Original side-by-side widget + terminal pane
+         ══════════════════════════════════════════════════════ */}
+      <main className="hidden md:flex items-center justify-center p-6 pt-28 min-h-screen">
+        <motion.div layout transition={{ type: 'spring', stiffness: 200, damping: 30 }} className="flex gap-3 items-start">
+
+          {/* Side icon bar */}
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }}
+            className="flex flex-col gap-2 pt-1">
+            <SideTab active={activeTab === 'BRIDGE'}       onClick={() => { setActiveTab('BRIDGE'); setSelectedProxy(null); }} icon={<ArrowRightLeft size={18} />} title="Bridge" />
+            <SideTab active={activeTab === 'WITHDRAW_TEE'} onClick={() => setActiveTab('WITHDRAW_TEE')}                        icon={<ArrowUpRight size={18} />}   title="Withdraw TEE" />
+            <SideTab active={activeTab === 'PA'}           onClick={() => { setActiveTab('PA'); handleSwitchToPA(); }}         icon={<Layers size={18} />}          title="Accounts" />
+          </motion.div>
+
+          {/* Main widget */}
+          <motion.div layout
+            initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
+            className="glass-card rounded-3xl overflow-hidden flex"
+            style={{ width: selectedProxy ? 820 : 440, minHeight: 520, boxShadow: '0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(168,85,247,0.08)' }}
+          >
+            {/* Explorer pane */}
+            <div className="flex-1 p-7 flex flex-col">
+              <AnimatePresence mode="wait">
+                {activeTab === 'BRIDGE'       && <BridgeContent />}
+                {activeTab === 'WITHDRAW_TEE' && <WithdrawTeeContent />}
+                {activeTab === 'PA'           && <ProxyList />}
+              </AnimatePresence>
+            </div>
+
+            {/* Terminal pane — desktop only */}
+            <AnimatePresence>
+              {selectedProxy && (
+                <motion.div
+                  initial={{ width: 0, opacity: 0 }} animate={{ width: 360, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+                  className="border-l border-white/5 flex flex-col p-6 relative overflow-hidden"
+                  style={{ background: 'rgba(15, 10, 28, 0.7)' }}
+                >
+                  {/* Terminal header */}
+                  <div className="flex items-center justify-between mb-6 flex-shrink-0">
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <div className={`w-1.5 h-1.5 rounded-full ${selectedProxy.connected ? 'bg-emerald-400 pulse-purple' : 'bg-white/15'}`} />
+                        <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-widest">
+                          {selectedProxy.connected ? 'Session Active' : 'Terminal'}
+                        </p>
+                      </div>
+                      <p className="font-mono text-[9px] text-gray-600 truncate w-[200px]">{selectedProxy.address}</p>
+                    </div>
+                    <motion.button onClick={closeTerminal}
+                      className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-500 hover:text-white transition-all"
+                      whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                      <X size={13} />
+                    </motion.button>
+                  </div>
+
+                  <TerminalContent />
+
+                  {/* TX Status overlay */}
+                  <AnimatePresence>
+                    {txStatus !== 'IDLE' && view !== 'SIGNING_REQUIRED' && view !== 'CONNECT_STATUS' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 text-center"
+                        style={{ background: 'rgba(15, 10, 28, 0.95)', backdropFilter: 'blur(8px)' }}>
+                        {txStatus === 'PROCESSING' ? (
+                          <div className="space-y-3">
+                            <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto">
+                              <Loader2 className="text-purple-400 animate-spin" size={22} />
+                            </div>
+                            <p className="text-sm text-gray-300">Processing…</p>
+                          </div>
+                        ) : txStatus === 'SUCCESS' ? (
+                          <div className="space-y-3">
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
+                              <Check className="text-emerald-400" size={22} />
+                            </div>
+                            <p className="text-sm text-gray-300 font-medium">Success</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <AlertCircle className="text-red-400 mx-auto" size={28} />
+                            <p className="text-xs text-red-400">{error}</p>
+                            <button onClick={() => { setTxStatus('IDLE'); setView('ACTIONS'); }}
+                              className="text-xs text-gray-500 hover:text-gray-300 mt-2 transition-colors">Dismiss</button>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         </motion.div>
       </main>
     </div>
   );
 }
 
-function NavTab({ active, onClick, icon, label }: any) {
+function SideTab({ active, onClick, icon, title }: any) {
   return (
-    <button
-      onClick={onClick}
-      className={`group relative w-12 h-12 flex flex-col items-center justify-center transition-all ${active ? 'text-indigo-400' : 'text-white/20 hover:text-white/40'}`}
-    >
+    <motion.button onClick={onClick} title={title}
+      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+        active ? 'bg-purple-500/15 text-purple-400 border border-purple-500/25' : 'bg-white/3 text-gray-500 border border-white/6 hover:bg-white/6 hover:text-gray-300'
+      }`}
+      whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}>
       {icon}
-      <span className="text-[7px] font-black uppercase tracking-widest mt-1">{label}</span>
-      {active && (
-        <motion.div layoutId="nav-pill" className="absolute -left-8 w-1 h-8 bg-indigo-500 rounded-r-full" />
-      )}
-    </button>
+    </motion.button>
   );
 }
 
-function ActionButton({ icon, label, sub, onClick }: any) {
+function ActionBtn({ icon, label, sub, onClick }: any) {
   return (
-    <button
-      onClick={onClick}
-      className="p-6 bg-white/[0.02] border border-white/5 rounded-[32px] hover:border-indigo-500/40 hover:bg-indigo-500/5 transition-all text-left"
-    >
-      <div className="text-indigo-400 mb-4">{icon}</div>
-      <div className="text-[10px] font-bold uppercase tracking-widest mb-1">{label}</div>
-      <div className="text-[8px] font-mono opacity-20 uppercase">{sub}</div>
-    </button>
+    <motion.button onClick={onClick}
+      className="p-4 rounded-2xl bg-white/2 border border-white/6 hover:border-purple-500/25 hover:bg-purple-500/5 transition-all text-left"
+      whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+      <div className="text-purple-400 mb-3">{icon}</div>
+      <p className="text-xs font-semibold text-white/80">{label}</p>
+      <p className="text-[10px] text-gray-600 mt-0.5">{sub}</p>
+    </motion.button>
   );
 }
