@@ -233,7 +233,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       while (!delivered) {
         const s = await apiGetBridgeStatus(res.txHash);
         if (s.status === 'DELIVERED') delivered = true;
-        else if (s.status === 'FAILED') throw new Error('Bridge transaction failed on-chain');
+        else if (s.status === 'FAILED') throw new Error('Bridge failed');
         else await new Promise(r => setTimeout(r, 3000));
       }
       setBridgePhase('done');
