@@ -201,3 +201,9 @@
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
 }
+
+/* ── NODE ROW MOBILE ── */
+@media (max-width: 640px) {
+  /* Ensure node address truncates cleanly */
+  .node-address { max-width: 120px; }
+}

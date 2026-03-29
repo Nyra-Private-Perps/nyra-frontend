@@ -144,6 +144,12 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     return '0';
   };
 
+  // Derived balance limits — used for validation and UI display
+  const depositMax  = Number(serverBalance) / 1e6;          // server available balance in USDC
+  const withdrawMax = Number(selectedProxy?.balance ?? 0);   // HL account value of selected proxy
+  const bridgeMax   = Number(walletBal?.formatted ?? 0);     // Horizen wallet USDC.e
+  const teeMax      = Number(serverBalance) / 1e6;           // same as depositMax (TEE funds)
+
   useEffect(() => {
     const limit = parseFloat(getActiveLimit());
     const input = parseFloat(amount || '0');
@@ -305,6 +311,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   };
 
   const handleDepositFlow = async () => {
+    await switchChainNetwork(42161);
     if (!selectedProxy || !address) return;
     setView('DEPOSIT_STEPS'); setError(null);
     try {
@@ -372,23 +379,64 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         {/* ACTIONS */}
         {view === 'ACTIONS' && selectedProxy && (
           <motion.div key="actions" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="space-y-4">
-            {/* Balance card */}
-            <div className="p-4 rounded-2xl bg-white/3 border border-white/7 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">HL Account Value</span>
-                <span className={`text-[9px] font-medium px-2 py-0.5 rounded-full border ${
-                  selectedProxy.connected ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-white/20 border-white/8'
-                }`}>{selectedProxy.connected ? '● Synced' : '○ Standby'}</span>
-              </div>
-              <div className="text-3xl font-semibold text-white">
-                {Number(selectedProxy.balance) > 0
-                  ? `$${Number(selectedProxy.balance).toLocaleString()}`
-                  : <span className="text-gray-600 text-xl font-normal">No position</span>}
-              </div>
-              {Number(selectedProxy.balance) > 0 && (
-                <div className={`text-xs font-medium ${Number(selectedProxy.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {Number(selectedProxy.pnl) >= 0 ? '+' : ''}{selectedProxy.pnl} Unrealized PnL
+            {/* ── Dual balance card ── */}
+            <div className="rounded-2xl border border-white/7 overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
+              {/* HL Account Value */}
+              <div className="p-4 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Hyperliquid Balance</span>
+                  <span className={`text-[9px] font-medium px-2 py-0.5 rounded-full border ${
+                    selectedProxy.connected ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-white/20 border-white/8'
+                  }`}>{selectedProxy.connected ? '● Synced' : '○ Standby'}</span>
                 </div>
+                <div className="text-3xl font-semibold text-white">
+                  {Number(selectedProxy.balance) > 0
+                    ? `$${Number(selectedProxy.balance).toLocaleString()}`
+                    : <span className="text-gray-600 text-xl font-normal">No position</span>}
+                </div>
+                {Number(selectedProxy.balance) > 0 && (
+                  <div className={`text-xs font-medium ${Number(selectedProxy.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {Number(selectedProxy.pnl) >= 0 ? '+' : ''}{selectedProxy.pnl} Unrealized PnL
+                  </div>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-white/5 px-4 py-3 flex items-center justify-between"
+                style={{ background: 'rgba(255,255,255,0.015)' }}>
+                <div>
+                  <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wider mb-0.5">Server Available</p>
+                  <p className={`text-base font-semibold ${depositMax > 0 ? 'text-white' : 'text-gray-600'}`}>
+                    ${depositMax.toFixed(2)} <span className="text-[10px] text-gray-600 font-normal">USDC</span>
+                  </p>
+                </div>
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${depositMax >= 5 ? 'bg-purple-500' : 'bg-white/15'}`} />
+              </div>
+
+              {/* Bridge tip — shown when server balance < 5 USDC */}
+              {depositMax < 5 && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="border-t border-amber-500/20 px-4 py-3 flex items-start gap-2.5"
+                  style={{ background: 'rgba(245,158,11,0.04)' }}
+                >
+                  <div className="w-4 h-4 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-[9px] text-amber-400 font-bold">!</span>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-amber-400 font-medium">Low server balance</p>
+                    <p className="text-[10px] text-amber-400/70 mt-0.5 leading-relaxed">
+                      You need at least $5 USDC to deposit. Bridge funds from Horizen EON first.
+                    </p>
+                    <button
+                      onClick={() => { setActiveTab('BRIDGE'); setSelectedProxy(null); setMobileShowTerminal(false); }}
+                      className="mt-1.5 text-[10px] text-amber-400 font-semibold hover:text-amber-300 underline underline-offset-2 transition-colors"
+                    >
+                      Go to Bridge →
+                    </button>
+                  </div>
+                </motion.div>
               )}
             </div>
 
@@ -927,10 +975,11 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
               {/* Sheet content */}
               <div className="flex-1 overflow-y-auto px-4 py-5 custom-scrollbar">
-                {/* Back button for sub-menus like Deposit Input */}
-                {view !== 'ACTIONS' && view !== 'DEPOSIT_STEPS' && view !== 'WITHDRAW_STEPS' && (
-                  <button onClick={() => setView('ACTIONS')} className="flex items-center gap-1.5 text-[11px] text-gray-500 mb-4 uppercase font-bold">
-                    <ChevronLeft size={13} /> Back
+                {/* Sub-nav for non-ACTIONS views */}
+                {view !== 'ACTIONS' && view !== 'DEPOSIT_STEPS' && view !== 'WITHDRAW_STEPS' && view !== 'CONNECT_STATUS' && view !== 'SIGNING_REQUIRED' && (
+                  <button onClick={() => setView('ACTIONS')}
+                    className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-300 mb-4 transition-colors">
+                    <ChevronLeft size={13} /> Back to actions
                   </button>
                 )}
                 <TerminalContent />
