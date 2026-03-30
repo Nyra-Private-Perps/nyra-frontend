@@ -4,11 +4,10 @@ import { flushSync } from 'react-dom';
 import { useAccount, useSignTypedData, useBalance, useSwitchChain } from 'wagmi';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-   Shield, Plus, ChevronRight, X, Loader2, Check,
+  Zap, Shield, Plus, ChevronRight, X, Loader2, Check,
   ArrowUpRight, Link2, ArrowDownLeft, Layers, RefreshCw,
   AlertCircle, ArrowRightLeft, Fuel, ExternalLink, ChevronLeft,
-  AlertTriangle,
-  ArrowDown
+  AlertTriangle
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import Header from './Header';
@@ -16,13 +15,12 @@ import { onPendingRequest, resolveRequest, type PendingRequest } from '@/lib/wal
 import {
   apiRegister, apiGenerateAddress, apiDeriveKey, apiStealthAddresses,
   getStoredEOA, getHLUserState, apiGetBalance, apiDeposit,
-  apiWithdraw, apiBridge, apiGetBridgeStatus, apiWithdrawAvailable
+  apiWithdraw, apiBridge, apiGetBridgeStatus, apiWithdrawAvailable,
+  getHLSpotState
 } from '@/lib/api/hyperStealth';
 import { prepareForPairing, setSessionProposalHandler } from '@/lib/walletController';
 import { approveToken, switchChainNetwork } from '@/lib/walletHelpers';
 import { getAddress, parseUnits } from 'viem';
-import Horizen from '../../../public/horizen.png';
-import Arbitrum from '../../../public/arb.png';
 
 const ARBITRUM_ID = 42161;
 const HORIZEN_ID  = 26514;
@@ -39,6 +37,7 @@ interface Proxy {
   connected: boolean;
   balance: string;
   pnl: string;
+  hlBalance: number;
 }
 
 /* ─── Stable amount input — no AnimatePresence on error to prevent layout shift ── */
@@ -137,9 +136,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [selectedProxy, setSelectedProxy] = useState<Proxy | null>(null);
   const [proxies, setProxies]         = useState<Proxy[]>([]);
   const [loading, setLoading]         = useState(true);
-  const [serverBalance, setServerBalance] = useState('0');
-  const [serverHLBalance, setServerHLBalance] = useState('0');
-  const [teeBalance, setTEEBalance]       = useState('0');
+  const [serverBalance, setServerBalance] = useState('0'); // available (deposited - credited)
+  const [withdrawProxy, setWithdrawProxy] = useState(0); // total bridged into TEE
   const [txStatus, setTxStatus]       = useState<TxStatus>('IDLE');
   const [error, setError]             = useState<string | null>(null);
   const [creating, setCreating]       = useState(false);
@@ -192,8 +190,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const wrongChain   = !isOnArbitrum && !isOnHorizen;
 
   // Derived max values
-  const depositMax  = Number(teeBalance) / 1e6;
-  const withdrawMax = Number(serverHLBalance) / 1e6;
+  const depositMax  = Number(serverBalance) / 1e6;
+  const withdrawMax = Number(withdrawProxy) / 1e6;
   const bridgeMax   = Number(walletBal?.formatted ?? 0);
   const teeMax      = Number(serverBalance) / 1e6;
 
@@ -236,24 +234,31 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const loadData = async () => {
     const eoa = getStoredEOA() || address;
     if (!eoa || !signTypedDataAsync) { setLoading(false); return; }
+    let spotUsdc=0;
     try {
       const res = await apiStealthAddresses(eoa, signTypedDataAsync);
       const list = await Promise.all(res.stealthAddresses.map(async (s: any, i: number) => {
         let connected = false, balance = '0', pnl = '0';
         try {
           const state = await getHLUserState(s.address);
+          const spotBalance= await getHLSpotState(s.address);
+          console.log(spotBalance,"spot balance");
+          const usdcSpot = spotBalance?.balances?.find(
+            (b: any) => b.coin === 'USDC' || b.coin === 'USDC:0xe3b'
+          );
+          console.log(usdcSpot?.total,"spot balance2");
+        spotUsdc = usdcSpot ? Number(usdcSpot.total ?? 0) : 0;
           if (state?.marginSummary && Number(state.marginSummary.accountValue) > 0) {
             connected = true; balance = state.marginSummary.accountValue; pnl = state.marginSummary.unrealizedPnl;
           }
         } catch {}
-        return { num: i + 1, address: s.address, connected, balance, pnl };
+        return { num: i + 1, address: s.address, connected, balance, pnl,hlBalance: spotUsdc ?? '0' };
       }));
       setProxies(list);
       const bal = await apiGetBalance(eoa);
       console.log(bal,"balance")
-      setServerBalance(bal.available);
-      setTEEBalance(bal.deposited);
-      setServerHLBalance(bal.credited);
+      setServerBalance(bal.available);   // available = deposited - credited
+      setWithdrawProxy(spotUsdc || 0);   // total sent to HL
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -506,14 +511,17 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                   </div>
                 )}
               </div>
-              <div className="border-t border-white/5 px-4 py-2.5 flex items-center justify-between" style={{ background: 'rgba(255,255,255,0.015)' }}>
-                <div>
-                  <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wider mb-0.5">Server Available</p>
-                  <p className={`text-sm font-semibold ${depositMax > 0 ? 'text-white' : 'text-gray-600'}`}>
-                    ${depositMax.toFixed(2)} <span className="text-[10px] text-gray-600 font-normal">USDC</span>
-                  </p>
-                </div>
-                <div className={`w-2 h-2 rounded-full ${depositMax >= 5 ? 'bg-purple-500' : 'bg-white/15'}`} />
+              {/* 3-column balance breakdown */}
+              <div className="border-t border-white/5 grid grid-cols-2 divide-x divide-white/5" style={{ background: 'rgba(255,255,255,0.015)' }}>
+                {[
+                  { label: 'Available to deposit',      value: depositMax.toFixed(2), tip: 'Deposited to Hyperliquid', color: 'text-purple-400' },
+                  { label: 'Withdraw Balance',  value: selectedProxy?.hlBalance,                       tip: 'Ready to deposit / withdraw', color: depositMax >= 5 ? 'text-emerald-400' : 'text-amber-400' },
+                ].map(b => (
+                  <div key={b.label} className="px-3 py-2.5 text-center" title={b.tip}>
+                    <p className="text-[9px] text-gray-600 font-medium uppercase tracking-wider mb-1">{b.label}</p>
+                    <p className={`text-xs font-semibold tabular-nums ${b.color}`}>${b.value}</p>
+                  </div>
+                ))}
               </div>
               {depositMax < 5 && (
                 <div className="border-t border-amber-500/20 px-4 py-3 flex items-start gap-2.5" style={{ background: 'rgba(245,158,11,0.04)' }}>
@@ -521,7 +529,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                     <span className="text-[9px] text-amber-400 font-bold">!</span>
                   </div>
                   <div>
-                    <p className="text-[11px] text-amber-400 font-medium">Low server balance</p>
+                    <p className="text-[11px] text-amber-400 font-medium">Low available balance</p>
                     <p className="text-[10px] text-amber-400/70 mt-0.5 leading-relaxed">Need at least $5 USDC to deposit. Bridge funds first.</p>
                     <button onClick={() => { setActiveTab('BRIDGE'); closeTerminal(); }}
                       className="mt-1 text-[10px] text-amber-400 font-semibold hover:text-amber-300 underline underline-offset-2 transition-colors">
@@ -745,7 +753,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               <span className="text-[10px] text-purple-400 font-medium">Wallet: ${bridgeMax.toFixed(2)}</span>
             </div>
             <div className={`flex items-center gap-3 p-4 rounded-2xl border transition-colors ${getBridgeError() ? 'border-red-500/40 bg-red-500/3' : 'border-white/8 bg-white/3 hover:border-purple-500/25'}`}>
-              <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-xs font-bold text-white flex-shrink-0"><img src={Horizen} width={'30px'} height={'30px'} alt="horizen logo" /></div>
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">HZ</div>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-white">USDC.e</p>
                 <p className="text-xs text-gray-500">Horizen EON</p>
@@ -767,7 +775,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
           <div className="flex justify-center">
             <div className="w-8 h-8 rounded-full bg-white/5 border border-white/8 flex items-center justify-center">
-              <ArrowDown size={14} className="text-gray-400" />
+              <ArrowDownLeft size={14} className="text-gray-400" />
             </div>
           </div>
 
@@ -775,7 +783,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           <div className="space-y-2">
             <label className="text-xs text-gray-500">To</label>
             <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/3 border border-white/8">
-              <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-xs font-bold text-white flex-shrink-0"><img src={Arbitrum} width={'30px'} height={'30px'} alt="arbitrum logo" /></div>
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">ARB</div>
               <div>
                 <p className="text-sm font-medium text-white">USDC</p>
                 <p className="text-xs text-gray-500">Arbitrum One</p>
@@ -849,7 +857,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const WithdrawTeeContent = () => (
     <motion.div key="tee" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-5">
       <div>
-        <h2 className="text-xl font-semibold text-white">Shielded</h2>
+        <h2 className="text-xl font-semibold text-white">TEE Withdrawal</h2>
         <p className="text-xs text-gray-500 mt-0.5">Move undeposited funds to Arbitrum</p>
       </div>
       <div className="p-4 rounded-2xl bg-white/3 border border-white/8 space-y-4">
@@ -915,8 +923,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             const isNew = newestProxyAddress === p.address;
             const isRefreshing = refreshingBalance === p.address;
             return (
-              <motion.div key={p.address} layout
-                initial={isNew ? { opacity: 0, y: -12, scale: 0.97 } : false}
+              <motion.div key={p.address}
+                initial={isNew ? { opacity: 0, y: -12, scale: 0.97 } : { opacity: 1, y: 0, scale: 1 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 24 }}
                 onClick={() => openProxy(p)}
@@ -1089,12 +1097,17 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             <SideTab active={activeTab === 'PA'}           onClick={() => { setActiveTab('PA'); handleSwitchToPA(); }} icon={<Layers size={18} />} title="Accounts" />
           </motion.div>
 
-          {/* Main widget */}
-          <motion.div layout
+          {/* Main widget — fixed-width transition via CSS, not Framer layout to avoid glitch */}
+          <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
             className="glass-card rounded-3xl overflow-hidden flex"
-            style={{ width: selectedProxy ? 820 : 440, minHeight: 520, boxShadow: '0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(168,85,247,0.08)' }}>
+            style={{
+              width: selectedProxy ? 820 : 440,
+              minHeight: 520,
+              transition: 'width 0.35s cubic-bezier(0.25,0.1,0.25,1)',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(168,85,247,0.08)',
+            }}>
 
             {/* Explorer pane */}
             <div className="flex-1 p-7 flex flex-col min-w-0">
@@ -1116,10 +1129,10 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             <AnimatePresence>
               {selectedProxy && (
                 <motion.div
-                  initial={{ width: 0, opacity: 0 }} animate={{ width: 360, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-                  transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+                  initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
                   className="border-l border-white/5 flex flex-col p-6 relative overflow-hidden flex-shrink-0"
-                  style={{ background: 'rgba(15,10,28,0.7)' }}>
+                  style={{ width: 360, background: 'rgba(15,10,28,0.7)' }}>
 
                   {/* Terminal header */}
                   <div className="flex items-center justify-between mb-5 flex-shrink-0">
