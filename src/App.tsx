@@ -222,7 +222,7 @@ function LandingPage() {
         <div ref={heroRef} className="min-h-[80vh] flex flex-col items-center justify-center text-center px-5 sm:px-8 pt-8 pb-12 max-w-4xl mx-auto">
           {/* Headline */}
           <div className="mb-5 w-full">
-            <div className="flex flex-wrap items-baseline justify-center gap-x-[0.28em]">
+            <div className="flex flex-wrap items-baseline justify-center gap-x-[0.45em]">
               {h1.map((w, i) => (
                 <motion.span key={`h1-${i}`} custom={i} variants={wordVariant} initial="hidden" animate="visible"
                   className="text-[clamp(2.8rem,8.5vw,6rem)] font-bold tracking-tight leading-none inline-block"
@@ -231,7 +231,7 @@ function LandingPage() {
                 </motion.span>
               ))}
             </div>
-            <div className="flex flex-wrap items-baseline justify-center gap-x-[0.28em] mt-1 sm:mt-2">
+            <div className="flex flex-wrap items-baseline justify-center gap-x-[0.45em] mt-1 sm:mt-2">
               {h2.map((w, i) => (
                 <motion.span key={`h2-${i}`} custom={h1.length + i} variants={wordVariant} initial="hidden" animate="visible"
                   className={cn('text-[clamp(2.8rem,8.5vw,6rem)] font-bold tracking-tight leading-none inline-block',
