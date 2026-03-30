@@ -149,6 +149,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [teeAmount, setTeeAmount]         = useState('');
+  const [withdrawMax,setWithdrawMax]       = useState(0);
 
   const [wcUri, setWcUri]         = useState('');
   const [destination, setDestination] = useState('');
@@ -191,7 +192,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
   // Derived max values
   const depositMax  = Number(serverBalance) / 1e6;
-  const withdrawMax = Number(withdrawProxy) / 1e6;
+  // const withdrawMax = Number(withdrawProxy) / 1e6;
   const bridgeMax   = Number(walletBal?.formatted ?? 0);
   const teeMax      = Number(serverBalance) / 1e6;
 
@@ -377,6 +378,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               setHlConnected(true);
               setProxies(prev => prev.map(p => p.address === selectedProxy.address ? { ...p, connected: true } : { ...p, connected: false }));
               setSelectedProxy(prev => prev ? { ...prev, connected: true } : prev);
+              setWithdrawMax(selectedProxy?.hlBalance ?? 0);
               setConnectStep('success');
               setTimeout(() => { setConnectStep('idle'); setView('ACTIONS'); setWcUri(''); }, 1500);
             }
@@ -442,6 +444,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
   const openProxy = (p: Proxy) => {
     setSelectedProxy(p); setView('ACTIONS'); setMobileShowTerminal(true);
+    setWithdrawMax(p?.hlBalance);
     // Pre-fill amounts to max on open
     setDepositAmount('');
     setWithdrawAmount('');
@@ -461,7 +464,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       const newPnl     = state?.marginSummary?.unrealizedPnl ?? '0';
       const updated = { ...proxy, balance: newBalance, pnl: newPnl, connected: Number(newBalance) > 0 };
       setProxies(prev => prev.map(x => x.address === proxy.address ? updated : x));
-      if (selectedProxy?.address === proxy.address) setSelectedProxy(updated);
+      if (selectedProxy?.address === proxy.address) {setSelectedProxy(updated);setWithdrawMax(updated.hlBalance); }
     } catch (e) { console.error(e); }
     finally { setRefreshingBalance(null); }
   };
