@@ -1,11 +1,13 @@
 "use client";
-import { Shield, Activity, Menu, X, Layers, Globe, AlertTriangle, MoreHorizontal, Wallet, ChevronDown } from 'lucide-react'
+import { Activity, Menu, X, Layers, Globe, AlertTriangle, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAccount, useSwitchChain, useBalance } from 'wagmi'
 import { formatUnits } from 'viem'
+import Horizen from '../../../public/horizen.png';
+import Arbitrum from '../../../public/arb.png';
 
 interface HeaderProps {
   currentPage: 'dashboard' | 'portfolio'
@@ -188,7 +190,9 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
             whileHover={{ scale: 1.02 }}
           >
             
-            <span className="text-base md:text-lg font-bold text-white tracking-wide">NYRA</span>
+            <span className="font-head font-extrabold text-[17px] tracking-[4px] uppercase">
+            NYRA
+          </span>
           </motion.div>
 
           {/* Desktop Nav */}
@@ -242,7 +246,7 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
           >
             {isWrongNetwork
               ? <AlertTriangle size={12} className="animate-pulse" />
-              : <Globe size={12} className={isArbitrum ? 'text-purple-400' : 'text-amber-400'} />
+              : isArbitrum?<img src={Arbitrum} width={'20px'} height={'20px'} alt="Arbitrum Network" />:<img src={Horizen} width={'20px'} height={'20px'} alt="Horizen Network"/>
             }
             <span className="text-xs font-semibold">{chain?.name || 'No Network'}</span>
             {isWrongNetwork && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded-full ml-1">Switch</span>}
@@ -277,15 +281,6 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
               );
             }}
           </ConnectButton.Custom>
-
-          {/* More menu — desktop */}
-          <motion.button
-            className="hidden md:flex p-2 rounded-full bg-white/5 border border-white/8 text-gray-400 hover:text-white hover:bg-white/8 transition-all"
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <MoreHorizontal size={18} />
-          </motion.button>
 
           {/* Mobile burger */}
           <Button

@@ -274,6 +274,15 @@ export const getHLUserState = (user: string) => fetchHL("clearinghouseState", { 
 export const getHLOpenOrders = (user: string) => fetchHL("openOrders", { user: getAddress(user) });
 export const getHLUserFills = (user: string) => fetchHL("userFills", { user: getAddress(user) });
 
+// 2. For Spot USDC (The actual USDC token in the Spot wallet)
+export const getHLSpotState = (user: string) => 
+  fetchHL("spotClearinghouseState", { user: getAddress(user) });
+
+// 3. (Optional) If you really want settled balances history, 
+// HL sometimes expects the address as a raw string without getAddress for this specific endpoint
+export const getUserSettledBalances = (user: string) => 
+  fetchHL("userSettledBalances", { user: user.toLowerCase() });
+
 export const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 export const numFmt = (val: string | number): string => {
   const n = typeof val === 'string' ? parseFloat(val) : val;
