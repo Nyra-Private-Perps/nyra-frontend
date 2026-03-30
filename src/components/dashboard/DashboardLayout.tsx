@@ -628,7 +628,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               <div className="border-t border-white/5 pt-3">
                 <AmountField
                   value={withdrawAmount} onChange={setWithdrawAmount}
-                  maxLabel={`$${withdrawMax.toFixed(2)}`} onMax={() => setWithdrawAmount(withdrawMax.toFixed(2))}
+                  maxLabel={`$${selectedProxy?.hlBalance?.toFixed(2)}`} onMax={() => selectedProxy?.hlBalance !== undefined && setWithdrawAmount(selectedProxy.hlBalance.toFixed(2))}
                   error={getWithdrawError()}
                 />
               </div>
@@ -874,6 +874,36 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
         Withdraw to Arbitrum
       </motion.button>
+
+      <AnimatePresence>
+                {txStatus !== 'IDLE' && view !== 'SIGNING_REQUIRED' && view !== 'CONNECT_STATUS' && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 text-center"
+                    style={{ background: 'rgba(12,8,22,0.96)', backdropFilter: 'blur(8px)' }}>
+                    {txStatus === 'PROCESSING' ? (
+                      <div className="space-y-4">
+                        <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto">
+                          <Loader2 className="text-purple-400 animate-spin" size={24} />
+                        </div>
+                        <p className="text-sm text-gray-300">Processing…</p>
+                      </div>
+                    ) : txStatus === 'SUCCESS' ? (
+                      <div className="space-y-4">
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
+                          <Check className="text-emerald-400" size={24} />
+                        </div>
+                        <p className="text-sm text-gray-300 font-medium">Success</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <AlertCircle className="text-red-400 mx-auto" size={32} />
+                        <p className="text-sm text-red-400">{error}</p>
+                        <button onClick={() => { setTxStatus('IDLE'); setView('ACTIONS'); }} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">Dismiss</button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
     </motion.div>
   );
 
