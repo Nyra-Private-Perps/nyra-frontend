@@ -70,87 +70,115 @@ function AnimatedNumber({
 }
 
 /* ─────────────────────────────────────────────────────────
-   GLOBE / SPHERE VISUAL  (matches screenshot)
+/* ─────────────────────────────────────────────────────────
+   GLOBE / SPHERE VISUAL  (Enhanced)
 ───────────────────────────────────────────────────────── */
 function GlobeSphere() {
   return (
-    <div className="relative flex items-center justify-center" style={{ width: 180, height: 180 }}>
-      {/* Outer glow ring */}
-      <motion.div
-        className="absolute rounded-full"
-        style={{ width: 180, height: 180 }}
-        animate={{ scale: [1, 1.06, 1], opacity: [0.25, 0.45, 0.25] }}
-        transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-      >
-        <div className="w-full h-full rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(147,51,234,0.35) 0%, transparent 70%)' }} />
-      </motion.div>
+    <div className="relative flex items-center justify-center" style={{ width: 220, height: 220 }}>
+      {/* Deep ambient glow */}
+      <div className="absolute w-[280px] h-[280px] bg-purple-600/20 blur-[60px] rounded-full pointer-events-none" />
 
-      {/* Middle ring */}
+      {/* Outer pulsing ring */}
       <motion.div
-        className="absolute rounded-full border border-purple-500/20"
-        style={{ width: 150, height: 150 }}
-        animate={{ rotate: 360 }}
-        transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+        className="absolute rounded-full border border-purple-500/10"
+        style={{ width: 210, height: 210 }}
+        animate={{ scale: [1, 1.05, 1], opacity: [0.3, 0.6, 0.3] }}
+        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      {/* Core sphere */}
-      <div className="relative z-10" style={{ width: 120, height: 120 }}>
-        {/* Sphere base */}
-        <div
-          className="w-full h-full rounded-full"
-          style={{
-            background: 'radial-gradient(circle at 35% 35%, #3a2060 0%, #1a0d30 40%, #0a0515 100%)',
-            boxShadow: '0 0 60px rgba(147,51,234,0.25), inset 0 1px 1px rgba(255,255,255,0.08)',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}
-        />
+      {/* Counter-rotating dashed ring */}
+      <motion.div
+        className="absolute rounded-full"
+        style={{
+          width: 170, height: 170,
+          border: '1px dashed rgba(168,85,247,0.3)',
+        }}
+        animate={{ rotate: -360 }}
+        transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
+      />
 
-        {/* Grid lines overlay — mimics the wireframe sphere in screenshot */}
-        <svg
+      {/* Core sphere container */}
+      <motion.div
+        className="relative z-10 overflow-hidden rounded-full"
+        style={{
+          width: 130, height: 130,
+          background: 'radial-gradient(circle at 30% 30%, #4c1d95 0%, #2e1065 40%, #03030a 100%)',
+          boxShadow: '0 0 40px rgba(124,58,237,0.3), inset -10px -10px 30px rgba(0,0,0,0.8), inset 2px 2px 10px rgba(255,255,255,0.2)',
+          border: '1px solid rgba(168,85,247,0.2)',
+        }}
+        animate={{ rotateZ: 360 }}
+        transition={{ duration: 60, repeat: Infinity, ease: 'linear' }}
+      >
+        {/* Dynamic wireframe grid */}
+        <motion.div
           className="absolute inset-0"
-          viewBox="0 0 120 120"
-          style={{ opacity: 0.18 }}
+          animate={{ x: ['0%', '-50%'] }}
+          transition={{ duration: 15, repeat: Infinity, ease: 'linear' }}
+          style={{ width: '200%' }}
         >
-          {/* Horizontal latitude lines */}
-          {[25, 40, 55, 70, 85, 95].map(cy => (
-            <ellipse key={cy} cx="60" cy={cy} rx={Math.sqrt(Math.max(0, 60 * 60 - (cy - 60) * (cy - 60)))} ry="3"
-              fill="none" stroke="white" strokeWidth="0.6" />
-          ))}
-          {/* Vertical longitude lines */}
-          {[0, 30, 60, 90, 120, 150].map(angle => {
-            const rad = (angle * Math.PI) / 180;
-            return (
-              <ellipse key={angle} cx="60" cy="60"
-                rx={Math.abs(Math.cos(rad)) * 58 + 2} ry="58"
-                fill="none" stroke="white" strokeWidth="0.6"
-                transform={`rotate(${angle} 60 60)`} />
-            );
-          })}
-        </svg>
+          <svg className="w-full h-full" viewBox="0 0 260 130" opacity="0.3">
+            <defs>
+              <linearGradient id="gridGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="transparent" />
+                <stop offset="50%" stopColor="#c084fc" />
+                <stop offset="100%" stopColor="transparent" />
+              </linearGradient>
+            </defs>
+            {/* Horizontal lines */}
+            {[20, 45, 65, 85, 110].map(y => (
+              <line key={`h-${y}`} x1="0" y1={y} x2="260" y2={y} stroke="url(#gridGrad)" strokeWidth="0.8" />
+            ))}
+            {/* Curved vertical lines mimicking rotation */}
+            {[0, 26, 52, 78, 104, 130, 156, 182, 208, 234, 260].map(x => (
+              <path
+                key={`v-${x}`}
+                d={`M ${x} 0 Q ${x + 20} 65 ${x} 130`}
+                fill="none"
+                stroke="url(#gridGrad)"
+                strokeWidth="0.8"
+              />
+            ))}
+          </svg>
+        </motion.div>
 
-        {/* Central light spot */}
+        {/* Glossy overlay */}
         <div
-          className="absolute"
+          className="absolute inset-0"
           style={{
-            top: '22%', left: '28%', width: 28, height: 28,
-            background: 'radial-gradient(circle, rgba(255,255,255,0.55) 0%, rgba(200,180,255,0.2) 50%, transparent 70%)',
-            filter: 'blur(3px)',
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 40%)',
+            borderRadius: '50%',
           }}
         />
-      </div>
+      </motion.div>
 
-      {/* Orbiting dot */}
+      {/* Orbiting element (Comet) */}
       <motion.div
         className="absolute"
-        style={{ width: 160, height: 160 }}
+        style={{ width: 190, height: 190 }}
         animate={{ rotate: 360 }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+        transition={{ duration: 5, repeat: Infinity, ease: 'linear' }}
       >
         <div
-          className="absolute w-2.5 h-2.5 rounded-full bg-purple-400"
-          style={{ top: 0, left: '50%', marginLeft: -5, marginTop: -5,
-            boxShadow: '0 0 8px rgba(168,85,247,0.9)' }}
+          className="absolute rounded-full"
+          style={{
+            top: 0, left: '50%',
+            width: 8, height: 8,
+            marginLeft: -4, marginTop: -4,
+            background: '#c084fc',
+            boxShadow: '0 0 15px 4px rgba(168,85,247,0.8), 0 0 30px rgba(192,132,252,0.6)',
+          }}
+        />
+        {/* Tail */}
+        <div
+          className="absolute origin-right"
+          style={{
+            top: 0, left: '50%',
+            width: 40, height: 2,
+            marginLeft: -44, marginTop: -1,
+            background: 'linear-gradient(90deg, transparent, rgba(192,132,252,0.8))',
+            filter: 'blur(1px)',
+          }}
         />
       </motion.div>
     </div>
