@@ -48,11 +48,11 @@ function PageBackground() {
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-purple-950/35 via-transparent to-indigo-950/20" />
-      <ElegantShape delay={0.1}  width={680} height={160} rotate={10}  gradient="from-purple-500/[0.12]" className="left-[-14%] top-[16%]" />
-      <ElegantShape delay={0.4}  width={500} height={120} rotate={-13} gradient="from-violet-500/[0.09]"  className="right-[-8%]  top-[58%]" />
-      <ElegantShape delay={0.55} width={240} height={60}  rotate={20}  gradient="from-indigo-400/[0.11]" className="right-[16%] top-[9%]"  />
-      <ElegantShape delay={0.25} width={320} height={78}  rotate={-6}  gradient="from-purple-400/[0.07]" className="left-[5%]   bottom-[9%]" />
-      <ElegantShape delay={0.7}  width={160} height={40}  rotate={-25} gradient="from-fuchsia-400/[0.09]" className="left-[28%]  top-[6%]"  />
+      <ElegantShape delay={0.1} width={680} height={160} rotate={10} gradient="from-purple-500/[0.12]" className="left-[-14%] top-[16%]" />
+      <ElegantShape delay={0.4} width={500} height={120} rotate={-13} gradient="from-violet-500/[0.09]" className="right-[-8%]  top-[58%]" />
+      <ElegantShape delay={0.55} width={240} height={60} rotate={20} gradient="from-indigo-400/[0.11]" className="right-[16%] top-[9%]" />
+      <ElegantShape delay={0.25} width={320} height={78} rotate={-6} gradient="from-purple-400/[0.07]" className="left-[5%]   bottom-[9%]" />
+      <ElegantShape delay={0.7} width={160} height={40} rotate={-25} gradient="from-fuchsia-400/[0.09]" className="left-[28%]  top-[6%]" />
       <div className="absolute inset-0 bg-gradient-to-b from-[#030308]/55 via-transparent to-[#030308]/75" />
     </div>
   )
@@ -143,15 +143,6 @@ function GlobalSigningModal() {
 }
 
 /* ─── Landing sections ──────────────────────────────────── */
-const STEPS = [
-  { n: '01', text: 'Connect your wallet to Nyra' },
-  { n: '02', text: 'Create a stealth address — as many as you need' },
-  { n: '03', text: 'Deposit funds from your main wallet into any stealth address' },
-  { n: '04', text: 'Trade on Hyperliquid directly through the stealth address' },
-  { n: '05', text: 'Track all positions across stealth addresses in one portfolio view' },
-  { n: '06', text: 'Withdraw back to your connected wallet anytime' },
-]
-
 /* ─── Landing Page ──────────────────────────────────────── */
 function LandingPage() {
   const navigate = useNavigate()
@@ -168,24 +159,6 @@ function LandingPage() {
     }
   }, [isConnected])
 
-  /* Section refs for auto-scroll */
-  const heroRef    = useRef<HTMLDivElement>(null)
-  const subRef     = useRef<HTMLDivElement>(null)
-  const stepsRef   = useRef<HTMLDivElement>(null)
-  const ctaRef     = useRef<HTMLDivElement>(null)
-
-  /* Auto-scroll through sections once on mount */
-  useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = []
-    // After hero text finishes (~1.8s), scroll to subline
-    timers.push(setTimeout(() => subRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 2200))
-    // Then reveal steps
-    timers.push(setTimeout(() => stepsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 4000))
-    // Then bring CTA into view
-    timers.push(setTimeout(() => ctaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 6200))
-    return () => timers.forEach(clearTimeout)
-  }, [])
-
   /* Word reveal variants */
   const wordVariant = {
     hidden: { opacity: 0, y: 38, filter: 'blur(6px)' },
@@ -199,17 +172,17 @@ function LandingPage() {
   const h2 = ['Nobody', 'knows', "it's", 'you.']
 
   return (
-    <div className="relative min-h-screen w-full overflow-y-auto overflow-x-hidden" style={{ background: '#030308' }}>
+    <div className="relative h-screen min-h-[600px] w-full overflow-hidden flex flex-col" style={{ background: '#030308' }}>
       <PageBackground />
 
-      <div className="relative z-10">
+      <div className="relative z-10 flex flex-col flex-1">
         {/* Nav */}
-        <nav className="flex items-center justify-between px-6 sm:px-10 pt-8 max-w-5xl mx-auto">
+        <nav className="flex items-center justify-between px-6 sm:px-10 pt-8 w-full max-w-7xl mx-auto">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center shadow-lg shadow-purple-500/20">
-              <Shield size={15} className="text-white" />
-            </div>
-            <span className="text-base font-bold text-white tracking-wide">NYRA</span>
+
+            <span className="font-head font-extrabold text-[17px] tracking-[4px] uppercase">
+              NYRA
+            </span>
           </div>
           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full"
             style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -218,10 +191,10 @@ function LandingPage() {
           </div>
         </nav>
 
-        {/* HERO — min-height so first section fills viewport */}
-        <div ref={heroRef} className="min-h-[80vh] flex flex-col items-center justify-center text-center px-5 sm:px-8 pt-8 pb-12 max-w-4xl mx-auto">
+        {/* HERO */}
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-5 sm:px-8 max-w-4xl mx-auto w-full -mt-12">
           {/* Headline */}
-          <div className="mb-5 w-full">
+          <div className="mb-12 w-full">
             <div className="flex flex-wrap items-baseline justify-center gap-x-[0.45em]">
               {h1.map((w, i) => (
                 <motion.span key={`h1-${i}`} custom={i} variants={wordVariant} initial="hidden" animate="visible"
@@ -243,99 +216,9 @@ function LandingPage() {
             </div>
           </div>
 
-          {/* Chevron */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.0, duration: 0.8 }}
-            className="flex flex-col items-center gap-1 text-white/20 mt-8">
-            <span className="text-[9px] uppercase tracking-[0.2em]">scroll to see how it works</span>
-            <motion.div animate={{ y: [0, 6, 0] }} transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}>
-              <ChevronDown size={16} />
-            </motion.div>
-          </motion.div>
-        </div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2, duration: 0.8 }}
+            className="flex flex-col items-center">
 
-        {/* SUBLINE section */}
-        <div ref={subRef} className="min-h-[40vh] flex flex-col items-center justify-center text-center px-5 sm:px-8 py-16 max-w-2xl mx-auto">
-          <motion.p
-            initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.6 }}
-            transition={{ duration: 0.8, ease: [0.25, 0.4, 0.25, 1] }}
-            className="text-lg sm:text-xl md:text-2xl text-white/50 leading-relaxed font-light"
-          >
-            Nyra creates{' '}
-            <span className="text-white/75 font-normal">stealth addresses</span> linked to your wallet.{' '}
-            Deposit, trade, withdraw.{' '}
-            <span className="text-white/75 font-normal">Your positions stay private.</span>
-          </motion.p>
-        </div>
-
-        {/* HOW IT WORKS */}
-        <div ref={stepsRef} className="px-5 sm:px-8 py-16 max-w-3xl mx-auto">
-          <motion.p
-            initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.5 }}
-            transition={{ duration: 0.5 }}
-            className="text-[10px] text-white/25 uppercase tracking-[0.25em] text-center mb-8 font-medium">
-            How it works
-          </motion.p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {STEPS.map((s, i) => (
-              <motion.div key={i}
-                initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.3 }}
-                transition={{ duration: 0.5, delay: i * 0.08 }}
-                className="flex items-start gap-3 px-4 py-3.5 rounded-2xl"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.045)' }}>
-                <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5"
-                  style={{ background: 'rgba(147,51,234,0.15)', border: '1px solid rgba(168,85,247,0.25)' }}>
-                  <span className="text-[9px] font-bold text-purple-400">{s.n}</span>
-                </div>
-                <p className="text-[12px] sm:text-[13px] text-white/45 leading-relaxed">{s.text}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        {/* CTA section */}
-        <div ref={ctaRef} className="flex flex-col items-center text-center px-5 sm:px-8 py-20 pb-28">
-          {/* Feature pills */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.6 }}
-            transition={{ duration: 0.6 }}
-            className="flex flex-wrap justify-center gap-2 mb-8">
-            {[
-              { icon: <Eye size={11} />, label: 'Unlinkable IDs' },
-              { icon: <Shield size={11} />, label: 'Non-Custodial' },
-              { icon: <Zap size={11} />, label: 'EIP-712 Permits' },
-              { icon: <Globe size={11} />, label: 'Arbitrum Native' },
-              { icon: <Lock size={11} />, label: 'Zero Footprint' },
-            ].map((f, i) => (
-              <motion.div key={f.label}
-                initial={{ opacity: 0, scale: 0.85 }} whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.06, duration: 0.35 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] text-white/35 font-medium"
-                style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <span className="text-purple-400/70">{f.icon}</span>{f.label}
-              </motion.div>
-            ))}
-          </motion.div>
-
-          {/* Footer tagline */}
-          <motion.p
-            initial={{ opacity: 0 }} whileInView={{ opacity: 1 }}
-            viewport={{ once: true, amount: 0.8 }}
-            transition={{ duration: 0.7, delay: 0.2 }}
-            className="text-[11px] text-white/22 tracking-[0.2em] uppercase font-medium mb-6">
-            Your trades. Your keys. Zero public trail.
-          </motion.p>
-
-          {/* Get Started button */}
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            whileInView={{ opacity: 1, y: 0, scale: 1 }}
-            viewport={{ once: true, amount: 0.8 }}
-            transition={{ duration: 0.6, delay: 0.3, ease: [0.25, 0.4, 0.25, 1] }}>
             <ConnectButton.Custom>
               {({ openConnectModal, mounted }) => (
                 <div {...(!mounted && { 'aria-hidden': true, style: { opacity: 0, pointerEvents: 'none' as const } })}>
@@ -463,10 +346,10 @@ function AppContent() {
       {isConnected && <GlobalSigningModal />}
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
-          <Route path="/"           element={<LandingPage />} />
-          <Route path="/dashboard"  element={<DashboardRoute />} />
-          <Route path="/portfolio"  element={<PortfolioRoute />} />
-          <Route path="*"           element={<LandingPage />} />
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/dashboard" element={<DashboardRoute />} />
+          <Route path="/portfolio" element={<PortfolioRoute />} />
+          <Route path="*" element={<LandingPage />} />
         </Routes>
       </AnimatePresence>
     </div>
