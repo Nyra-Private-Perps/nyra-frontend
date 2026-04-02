@@ -6,8 +6,9 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAccount, useSwitchChain, useBalance } from 'wagmi'
 import { formatUnits } from 'viem'
-import Horizen from '../../../public/horizen.png';
+import Horizen from '../../../public/horizen2.png';
 import Arbitrum from '../../../public/arb.png';
+import Nyralogo from '../../../public/Nyra.png';
 
 interface HeaderProps {
   currentPage: 'dashboard' | 'portfolio'
@@ -189,10 +190,10 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
             onClick={() => onNavigate('dashboard')}
             whileHover={{ scale: 1.02 }}
           >
-            
+            <img src={Nyralogo} width={"50px"} height={"50px"} alt="nyra logo" />
             <span className="font-head font-extrabold text-[17px] tracking-[4px] uppercase">
-            NYRA
-          </span>
+              NYRA
+            </span>
           </motion.div>
 
           {/* Desktop Nav */}
@@ -201,9 +202,8 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
               <motion.button
                 key={item.value}
                 onClick={() => onNavigate(item.value)}
-                className={`relative px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 flex items-center gap-1.5 ${
-                  currentPage === item.value ? 'text-white' : 'text-gray-400 hover:text-white'
-                }`}
+                className={`relative px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 flex items-center gap-1.5 ${currentPage === item.value ? 'text-white' : 'text-gray-400 hover:text-white'
+                  }`}
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 + index * 0.05, duration: 0.3 }}
@@ -217,7 +217,7 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
                     transition={{ type: "spring", stiffness: 400, damping: 30 }}
                   />
                 )}
-               
+
                 <span className="relative z-10">{item.label}</span>
               </motion.button>
             ))}
@@ -234,19 +234,18 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
           {/* Network badge — desktop only */}
           <motion.button
             onClick={() => switchChain({ chainId: ARBITRUM_ID })}
-            className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 ${
-              isWrongNetwork
-                ? 'bg-red-500/10 border-red-500/25 text-red-400'
-                : isHorizen
+            className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 ${isWrongNetwork
+              ? 'bg-red-500/10 border-red-500/25 text-red-400'
+              : isHorizen
                 ? 'bg-amber-500/10 border-amber-500/25 text-amber-400'
                 : 'bg-white/5 border-white/8 text-gray-400 hover:text-white hover:bg-white/8'
-            }`}
+              }`}
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
           >
             {isWrongNetwork
               ? <AlertTriangle size={12} className="animate-pulse" />
-              : isArbitrum?<img src={Arbitrum} width={'20px'} height={'20px'} alt="Arbitrum Network" />:<img src={Horizen} width={'20px'} height={'20px'} alt="Horizen Network"/>
+              : isArbitrum ? <img src={Arbitrum} width={'20px'} height={'20px'} alt="Arbitrum Network" /> : <img className='rounded-full' src={Horizen} width={'20px'} height={'20px'} alt="Horizen Network" />
             }
             <span className="text-xs font-semibold">{chain?.name || 'No Network'}</span>
             {isWrongNetwork && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded-full ml-1">Switch</span>}
@@ -306,11 +305,10 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
             {/* Network on mobile */}
             <button
               onClick={() => switchChain({ chainId: ARBITRUM_ID })}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${
-                isWrongNetwork
-                  ? 'bg-red-500/10 border-red-500/25 text-red-400'
-                  : 'bg-white/3 border-white/8 text-gray-400'
-              }`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${isWrongNetwork
+                ? 'bg-red-500/10 border-red-500/25 text-red-400'
+                : 'bg-white/3 border-white/8 text-gray-400'
+                }`}
             >
               <Globe size={14} className={isArbitrum ? 'text-purple-400' : isHorizen ? 'text-amber-400' : 'text-gray-600'} />
               {chain?.name || 'No Network'}
@@ -321,11 +319,10 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
               <button
                 key={item.value}
                 onClick={() => { onNavigate(item.value); setMobileMenuOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${
-                  currentPage === item.value
-                    ? 'bg-purple-500/10 border-purple-500/25 text-purple-300'
-                    : 'bg-white/3 border-white/8 text-gray-400'
-                }`}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${currentPage === item.value
+                  ? 'bg-purple-500/10 border-purple-500/25 text-purple-300'
+                  : 'bg-white/3 border-white/8 text-gray-400'
+                  }`}
               >
                 <span className={currentPage === item.value ? 'text-purple-400' : 'text-gray-600'}>{item.icon}</span>
                 {item.label}

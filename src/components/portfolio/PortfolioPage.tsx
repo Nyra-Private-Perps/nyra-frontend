@@ -9,7 +9,7 @@ import {
   TrendingUp, RefreshCw, AlertCircle, Loader2, Activity,
   Target, Zap, Eye, EyeOff, Layers, History, ChevronDown,
   ExternalLink, BarChart2, Clock, Shield, Lock, ArrowRight,
-  Wallet, DollarSign
+  Wallet, DollarSign, ShieldCheck, Ban, Leaf, Circle
 } from 'lucide-react';
 import Header from '@/components/dashboard/Header';
 import {
@@ -56,7 +56,7 @@ function AnimatedNumber({
   value: number; prefix?: string; decimals?: number; className?: string;
 }) {
   const mValue = useMotionValue(value);
-  const spring  = useSpring(mValue, { stiffness: 60, damping: 20 });
+  const spring = useSpring(mValue, { stiffness: 60, damping: 20 });
   const display: MotionValue<string> = useTransform(
     spring,
     (v: number) => `${prefix}${Math.abs(v).toLocaleString('en-US', {
@@ -190,20 +190,19 @@ function GlobeSphere() {
 ───────────────────────────────────────────────────────── */
 function NodeRow({ node, index }: { node: NodeState; index: number }) {
   const [open, setOpen] = useState(false);
-  const isLoaded  = node.status === 'loaded';
+  const isLoaded = node.status === 'loaded';
   const isPending = node.status === 'pending';
-  const pnlPos    = node.unrealizedPnl >= 0;
+  const pnlPos = node.unrealizedPnl >= 0;
 
   return (
     <motion.div
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.04, duration: 0.35 }}
-      className={`rounded-2xl border overflow-hidden transition-colors ${
-        isLoaded  ? 'glass-card' :
+      className={`rounded-2xl border overflow-hidden transition-colors ${isLoaded ? 'glass-card' :
         isPending ? 'bg-white/1 border-white/4' :
-                    'bg-white/1 border-white/3 opacity-50'
-      }`}
+          'bg-white/1 border-white/3 opacity-50'
+        }`}
     >
       {/* Row header */}
       <button
@@ -212,10 +211,9 @@ function NodeRow({ node, index }: { node: NodeState; index: number }) {
         disabled={!isLoaded}
       >
         <div className="w-5 text-[10px] font-mono text-gray-700 flex-shrink-0">{node.idx + 1}</div>
-        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-          isLoaded  ? 'bg-purple-500' :
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isLoaded ? 'bg-purple-500' :
           isPending ? 'bg-white/15 animate-pulse' : 'bg-white/8'
-        }`} />
+          }`} />
         <div className="flex-1 font-mono text-xs text-gray-600 truncate min-w-0">
           <span className="hidden sm:inline">{node.address}</span>
           <span className="sm:hidden">{node.address.slice(0, 10)}…{node.address.slice(-6)}</span>
@@ -235,9 +233,8 @@ function NodeRow({ node, index }: { node: NodeState; index: number }) {
             <motion.div
               animate={{ rotate: open ? 180 : 0 }}
               transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-              className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${
-                open ? 'bg-purple-500/20 text-purple-400' : 'bg-white/5 text-gray-600'
-              }`}
+              className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${open ? 'bg-purple-500/20 text-purple-400' : 'bg-white/5 text-gray-600'
+                }`}
             >
               <ChevronDown size={13} />
             </motion.div>
@@ -262,11 +259,11 @@ function NodeRow({ node, index }: { node: NodeState; index: number }) {
               {/* Stats grid — including spot USDC */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {[
-                  { label: 'Account Value',  val: `$${numFmt(node.accountValue)}`,  color: 'text-white' },
+                  { label: 'Account Value', val: `$${numFmt(node.accountValue)}`, color: 'text-white' },
                   { label: 'Unrealized PnL', val: `${pnlPos ? '+' : ''}${numFmt(node.unrealizedPnl)}`, color: pnlPos ? 'text-emerald-400' : 'text-red-400' },
-                  { label: 'Margin Used',    val: `$${numFmt(node.marginUsed)}`,    color: 'text-amber-400' },
-                  { label: 'Withdrawable',   val: `$${numFmt(node.withdrawable)}`,  color: 'text-purple-400' },
-                  { label: 'Spot USDC',      val: `$${numFmt(node.spotUsdc)}`,      color: 'text-cyan-400' },
+                  { label: 'Margin Used', val: `$${numFmt(node.marginUsed)}`, color: 'text-amber-400' },
+                  { label: 'Withdrawable', val: `$${numFmt(node.withdrawable)}`, color: 'text-purple-400' },
+                  { label: 'Spot USDC', val: `$${numFmt(node.spotUsdc)}`, color: 'text-cyan-400' },
                 ].map(s => (
                   <div key={s.label} className="p-3 rounded-xl bg-white/3 border border-white/5">
                     <p className="text-[10px] text-gray-600 mb-1">{s.label}</p>
@@ -289,9 +286,8 @@ function NodeRow({ node, index }: { node: NodeState; index: number }) {
                       <div key={i}
                         className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-white/2 border border-white/5 gap-2">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
-                            Number(pos.szi) > 0 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
-                          }`}>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${Number(pos.szi) > 0 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
+                            }`}>
                             {Number(pos.szi) > 0 ? 'L' : 'S'}
                           </span>
                           <span className="text-xs font-semibold text-white truncate">{pos.coin}</span>
@@ -332,9 +328,8 @@ function NodeRow({ node, index }: { node: NodeState; index: number }) {
                   <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
                     {node.trades.slice(0, 20).map((fill: any, i: number) => (
                       <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/2 border border-white/4 text-xs">
-                        <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] flex-shrink-0 ${
-                          fill.side === 'B' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
-                        }`}>
+                        <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] flex-shrink-0 ${fill.side === 'B' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
+                          }`}>
                           {fill.side === 'B' ? 'BUY' : 'SELL'}
                         </span>
                         <span className="font-semibold text-white flex-shrink-0">{fill.coin}</span>
@@ -375,175 +370,157 @@ function NodeRow({ node, index }: { node: NodeState; index: number }) {
 /* ─────────────────────────────────────────────────────────
    PORTFOLIO UNLOCK SCREEN  (matches screenshot style)
 ───────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────
+   NODE/LOCK VISUAL  (Minimal Concentric Rings)
+───────────────────────────────────────────────────────── */
+function NodeGlowLock() {
+  return (
+    <div className="relative flex items-center justify-center p-8">
+      {/* Deep ambient glow */}
+      <div className="absolute w-[180px] h-[180px] bg-purple-500/10 blur-[50px] rounded-full pointer-events-none" />
+
+      {/* Ring 3 (Outer) */}
+      <motion.div className="absolute rounded-full border border-white/5" style={{ width: 140, height: 140 }}
+        animate={{ scale: [1, 1.05, 1], opacity: [0.3, 0.4, 0.3] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }} />
+
+      {/* Ring 2 (Middle) */}
+      <motion.div className="absolute rounded-full border border-purple-500/10" style={{ width: 90, height: 90 }}
+        animate={{ scale: [1, 1.02, 1], opacity: [0.5, 0.7, 0.5] }} transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }} />
+
+      {/* Ring 1 (Inner Glowing Line) */}
+      <div className="absolute rounded-full border border-purple-400/30" style={{ width: 50, height: 50, boxShadow: '0 0 15px rgba(168,85,247,0.2)' }} />
+
+      {/* Core Dot */}
+      <motion.div className="relative z-10 rounded-full bg-[#d8b4fe]"
+        style={{ width: 12, height: 12, boxShadow: '0 0 20px 4px rgba(168,85,247,0.8), 0 0 40px 8px rgba(147,51,234,0.4)' }}
+        animate={{ scale: [1, 1.2, 1], opacity: [0.8, 1, 0.8] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+      />
+    </div>
+  );
+}
+
 function PortfolioUnlockScreen({ onUnlock }: { onUnlock: () => void }) {
   const featureCards = [
-    { icon: <Wallet size={20} className="text-purple-400" />,   title: 'Positions',  sub: 'Manage Assets' },
-    { icon: <TrendingUp size={20} className="text-cyan-400" />, title: 'PnL',        sub: 'Real-Time Data' },
-    { icon: <History size={20} className="text-indigo-400" />,  title: 'History',    sub: 'Audit Trail' },
-    { icon: <Activity size={20} className="text-violet-400" />, title: 'Nodes',      sub: 'Network Health' },
+    { icon: <Wallet size={16} className="text-purple-400" />, title: 'POSITIONS', value: 'Locked' },
+    { icon: <TrendingUp size={16} className="text-purple-400" />, title: 'PNL', value: 'Locked' },
+    { icon: <History size={16} className="text-purple-400" />, title: 'TRADE HISTORY', value: 'Locked' },
+    { icon: <Activity size={16} className="text-purple-400" />, title: 'NODE STATUS', status: 'Active' },
   ];
 
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden"
-      style={{ background: '#08060f' }}>
+    <div className="relative h-screen min-h-[700px] w-full flex flex-col justify-center overflow-hidden pt-24 pb-12"
+      style={{ background: '#08080A' }}>
 
-      {/* Subtle grid */}
-      <div className="absolute inset-0 grid-pattern opacity-40 pointer-events-none" />
+      {/* Background Grid */}
+      <div className="absolute inset-0 grid-pattern opacity-30 pointer-events-none" />
 
-      {/* Ambient glow behind sphere */}
-      <div className="absolute pointer-events-none"
-        style={{
-          width: 400, height: 400,
-          top: '50%', left: '50%',
-          transform: 'translate(-50%, -65%)',
-          background: 'radial-gradient(circle, rgba(120,60,220,0.18) 0%, transparent 70%)',
-          filter: 'blur(40px)',
-        }}
-      />
+      {/* Main Container to keep content centered vertically */}
+      <div className="relative z-10 flex-1 flex flex-col items-center">
 
-      {/* Main card */}
-      <motion.div
-        initial={{ opacity: 0, y: 32, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.6, ease: [0.23, 0.86, 0.39, 0.96] }}
-        className="relative z-10 w-full max-w-[820px] mt-[5rem] mx-4 sm:mx-8 rounded-[28px] overflow-hidden "
-        style={{
-          background: 'linear-gradient(160deg, rgba(28,16,52,0.92) 0%, rgba(14,8,28,0.96) 100%)',
-          border: '1px solid rgba(255,255,255,0.06)',
-          boxShadow: '0 40px 100px rgba(0,0,0,0.7), 0 0 0 1px rgba(147,51,234,0.08)',
-        }}
-      >
-        {/* Content */}
-        <div className="px-6 sm:px-16 pt-4 pb-10 flex flex-col items-center text-center">
+        {/* Core Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 32, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.6, ease: [0.23, 0.86, 0.39, 0.96] }}
+          className="w-full max-w-[640px] rounded-[32px] overflow-hidden p-[1px] relative mx-4 pb-8 mt-4"
+          style={{ background: 'rgba(255,255,255,0.03)', boxShadow: '0 40px 100px rgba(0,0,0,0.8)' }}
+        >
+          {/* Subtle inner top-light overlay */}
+          <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-purple-500/10 to-transparent pointer-events-none" />
 
-          {/* Globe */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.2, ease: [0.23, 0.86, 0.39, 0.96] }}
-            className="mb-8"
-          >
-            <GlobeSphere />
-          </motion.div>
+          <div className="w-full h-full rounded-[32px] bg-[#0c0c11]/80 backdrop-blur-3xl px-8 py-12 flex flex-col items-center relative z-10">
 
-          {/* Headline */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            className="mb-5"
-          >
-            <h1 className="text-3xl sm:text-5xl font-bold text-white leading-tight tracking-tight mb-2">
-              Your Portfolio Awaits
-            </h1>
-            <h2 className="text-3xl sm:text-5xl font-bold leading-tight tracking-tight"
-              style={{
-                background: 'linear-gradient(135deg, rgba(255,255,255,0.7) 0%, rgba(200,180,255,0.9) 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-              }}>
-              Discovery
-            </h2>
-          </motion.div>
+            {/* Top Left Text */}
+            {/* <div className="absolute top-8 left-8">
+              <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase mb-1">Vault ID: NYRA-001-X</p>
+              <p className="text-[10px] text-purple-400/70 font-mono tracking-widest uppercase flex items-center gap-1.5">
+                <Lock size={10} />
+                Status: Encrypted
+              </p>
+            </div> */}
 
-          {/* Subtext */}
-          <motion.p
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.55 }}
-            className="text-sm sm:text-base text-gray-400 max-w-md leading-relaxed mb-10"
-          >
-            NYRA uses advanced zero-knowledge encryption to ensure your global ledger remains private,
-            secure, and under your exclusive control.
-          </motion.p>
+            {/* Glowing Dot Visual */}
+            <div className="mt-8 mb-6">
+              <NodeGlowLock />
+            </div>
 
-          {/* Unlock button */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.7 }}
-            className="mb-10"
-          >
+            {/* Pill */}
+            <div className="px-3.5 py-1.5 rounded-full mb-8 flex items-center gap-2"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+              <span className="text-[9px] font-bold tracking-[0.2em] text-white/50 uppercase">Aggregated Stealth Node</span>
+            </div>
+
+            {/* Heading */}
+            <h1 className="text-4xl font-bold text-white tracking-tight mb-4">Your Portfolio Awaits</h1>
+
+            {/* Subtext */}
+            <p className="text-[13px] text-gray-400 max-w-sm text-center mb-10 leading-relaxed font-light">
+              NYRA needs to verify your identity to fetch your stealth addresses from the registry.
+            </p>
+
+            {/* Button */}
             <motion.button
               onClick={onUnlock}
-              className="relative inline-flex items-center justify-center px-12 py-4 rounded-xl font-bold text-sm uppercase tracking-[0.15em] text-white overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, #7c3aed 0%, #9333ea 50%, #6d28d9 100%)',
-                boxShadow: '0 0 0 1px rgba(168,85,247,0.4), 0 8px 32px rgba(147,51,234,0.4)',
-                minWidth: 240,
-              }}
-              whileHover={{
-                scale: 1.03,
-                boxShadow: '0 0 0 1px rgba(168,85,247,0.6), 0 0 60px rgba(147,51,234,0.55)',
-              }}
-              whileTap={{ scale: 0.97 }}
-              transition={{ duration: 0.18 }}
+              className="w-64 h-14 pos-relative rounded-full font-semibold text-[15px] text-white/90 mb-8 border border-white/10"
+              style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #9333ea 50%, #6d28d9 100%)', boxShadow: '0 0 30px rgba(168,85,247,0.3)' }}
+              whileHover={{ scale: 1.02, boxShadow: '0 0 40px rgba(168,85,247,0.5)' }} whileTap={{ scale: 0.98 }}
             >
-              {/* Shimmer */}
-              <motion.span
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.15] to-transparent -skew-x-12"
-                initial={{ x: '-120%' }}
-                whileHover={{ x: '220%' }}
-                transition={{ duration: 0.5 }}
-              />
-              <Lock size={14} className="relative z-10 mr-2.5" />
-              <span className="relative z-10">Unlock Portfolio</span>
+              Show Portfolio
             </motion.button>
-          </motion.div>
 
-          {/* Verified badge */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.85 }}
-            className="flex items-center gap-2 px-5 py-2 rounded-full mb-10"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/40">
-              System Verified: Institutional Grade
-            </span>
-          </motion.div>
+            {/* Badges */}
+            <div className="flex flex-wrap justify-center items-center gap-6">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck size={12} className="text-gray-500" />
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Signature Only</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Ban size={12} className="text-gray-500" />
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">No Transaction</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Leaf size={12} className="text-gray-500" />
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">No Gas Cost</span>
+              </div>
+            </div>
 
-          {/* Security note */}
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.9 }}
-            className="text-[11px] text-white/20 mb-0"
-          >
-            Signature only · No transaction · No gas cost
-          </motion.p>
-        </div>
+          </div>
+        </motion.div>
 
-        {/* Feature cards row at bottom */}
+        {/* 4 Bottom Cards below the Core Card */}
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.95 }}
-          className="grid grid-cols-2 sm:grid-cols-4 border-t border-white/5"
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+          className="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full max-w-[640px] px-4 relative z-20 -mt-12"
         >
           {featureCards.map((card, i) => (
-            <div
-              key={card.title}
-              className={`flex items-center gap-3 px-5 py-5 ${
-                i < featureCards.length - 1 ? 'border-r border-white/5' : ''
-              }`}
-              style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'rgba(255,255,255,0.008)' }}
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <div key={i} className="rounded-3xl bg-[#0c0c11]/95 border border-white/10 p-5 flex flex-col gap-6 backdrop-blur-3xl shadow-2xl">
+              <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center">
                 {card.icon}
               </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-white/85 leading-none">{card.title}</p>
-                <p className="text-[10px] text-gray-600 uppercase tracking-wider mt-0.5">{card.sub}</p>
+              <div>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">{card.title}</p>
+                {card.status ? (
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs text-white font-medium">{card.status}</span>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-gray-400 font-medium tracking-wide flex items-center gap-1.5">
+                    <Lock size={10} className="text-gray-500" />
+                    {card.value}
+                  </p>
+                )}
               </div>
             </div>
           ))}
         </motion.div>
-      </motion.div>
+      </div>
+
+      {/* Footer System Specs */}
+
     </div>
-  );
+  )
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -581,15 +558,15 @@ export default function PortfolioPage({
       .flatMap(n => n.trades)
       .sort((a, b) => (b.time || 0) - (a.time || 0));
     setTotals({
-      accountValue:  loaded.reduce((s, n) => s + n.accountValue, 0),
+      accountValue: loaded.reduce((s, n) => s + n.accountValue, 0),
       unrealizedPnl: loaded.reduce((s, n) => s + n.unrealizedPnl, 0),
-      marginUsed:    loaded.reduce((s, n) => s + n.marginUsed, 0),
-      withdrawable:  loaded.reduce((s, n) => s + n.withdrawable, 0),
-      spotUsdc:      loaded.reduce((s, n) => s + n.spotUsdc, 0),
-      positions:     loaded.flatMap(n => n.positions),
-      history:       allHistory,
-      loadedCount:   nodeList.filter(n => n.status !== 'pending').length,
-      totalCount:    total,
+      marginUsed: loaded.reduce((s, n) => s + n.marginUsed, 0),
+      withdrawable: loaded.reduce((s, n) => s + n.withdrawable, 0),
+      spotUsdc: loaded.reduce((s, n) => s + n.spotUsdc, 0),
+      positions: loaded.flatMap(n => n.positions),
+      history: allHistory,
+      loadedCount: nodeList.filter(n => n.status !== 'pending').length,
+      totalCount: total,
     });
   }, []);
 
@@ -644,10 +621,10 @@ export default function PortfolioPage({
             const result: NodeState = {
               address: addr, idx,
               status: (summary || fills?.length || spotUsdc > 0) ? 'loaded' : 'empty',
-              accountValue:  Number(summary?.accountValue ?? 0),
+              accountValue: Number(summary?.accountValue ?? 0),
               unrealizedPnl: Number(summary?.unrealizedPnl ?? 0),
-              marginUsed:    Number(summary?.totalMarginUsed ?? 0),
-              withdrawable:  Number(perpState?.withdrawable ?? 0),
+              marginUsed: Number(summary?.totalMarginUsed ?? 0),
+              withdrawable: Number(perpState?.withdrawable ?? 0),
               spotUsdc,
               positions: nodePositions,
               trades: (fills ?? []).map((f: any) => ({ ...f, parentProxy: addr })),
@@ -676,19 +653,29 @@ export default function PortfolioPage({
   useEffect(() => { return () => { abortRef.current = true; }; }, [address]);
 
   const displayNodes = hideEmpty ? nodes.filter(n => n.status !== 'empty') : nodes;
-  const isLoading    = phase === 'auth' || phase === 'streaming';
+  const isLoading = phase === 'auth' || phase === 'streaming';
 
   const metrics = [
-    { label: 'Total Value',  value: totals.accountValue,  prefix: '$', decimals: 2,
-      color: 'text-white',       icon: <TrendingUp size={14} /> },
-    { label: 'Net PnL',      value: totals.unrealizedPnl, prefix: '',  decimals: 2,
-      color: totals.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400', icon: <Activity size={14} /> },
-    { label: 'Spot USDC',    value: totals.spotUsdc,      prefix: '$', decimals: 2,
-      color: 'text-cyan-400',    icon: <DollarSign size={14} /> },
-    { label: 'Active Nodes', value: nodes.filter(n => n.status === 'loaded').length, prefix: '', decimals: 0,
-      color: 'text-purple-400',  icon: <Target size={14} /> },
-    { label: 'Total Trades', value: totals.history.length, prefix: '', decimals: 0,
-      color: 'text-white',       icon: <History size={14} /> },
+    {
+      label: 'Total Value', value: totals.accountValue, prefix: '$', decimals: 2,
+      color: 'text-white', icon: <TrendingUp size={14} />
+    },
+    {
+      label: 'Net PnL', value: totals.unrealizedPnl, prefix: '', decimals: 2,
+      color: totals.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400', icon: <Activity size={14} />
+    },
+    {
+      label: 'Spot USDC', value: totals.spotUsdc, prefix: '$', decimals: 2,
+      color: 'text-cyan-400', icon: <DollarSign size={14} />
+    },
+    {
+      label: 'Active Nodes', value: nodes.filter(n => n.status === 'loaded').length, prefix: '', decimals: 0,
+      color: 'text-purple-400', icon: <Target size={14} />
+    },
+    {
+      label: 'Total Trades', value: totals.history.length, prefix: '', decimals: 0,
+      color: 'text-white', icon: <History size={14} />
+    },
   ];
 
   /* ── IDLE: show unlock screen ── */
@@ -819,7 +806,7 @@ export default function PortfolioPage({
               <table className="w-full text-left min-w-[440px]">
                 <thead>
                   <tr className="border-b border-white/5">
-                    {['Asset','Side','Size','Entry','PnL','Node'].map(h => (
+                    {['Asset', 'Side', 'Size', 'Entry', 'PnL', 'Node'].map(h => (
                       <th key={h} className="px-4 sm:px-6 py-3 text-[10px] font-semibold text-gray-600 uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
@@ -829,17 +816,15 @@ export default function PortfolioPage({
                     <tr key={i} className="border-b border-white/2 hover:bg-white/2 transition-colors">
                       <td className="px-4 sm:px-6 py-3 text-sm font-semibold text-white">{pos.coin}</td>
                       <td className="px-4 sm:px-6 py-3">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          Number(pos.szi) > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                        }`}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${Number(pos.szi) > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                          }`}>
                           {Number(pos.szi) > 0 ? 'Long' : 'Short'}
                         </span>
                       </td>
                       <td className="px-4 sm:px-6 py-3 text-xs font-mono text-gray-400">{numFmt(Math.abs(pos.szi))}</td>
                       <td className="px-4 sm:px-6 py-3 text-xs font-mono text-gray-400">${numFmt(pos.entryPx)}</td>
-                      <td className={`px-4 sm:px-6 py-3 text-xs font-mono font-semibold ${
-                        Number(pos.unrealizedPnl) >= 0 ? 'text-emerald-400' : 'text-red-400'
-                      }`}>
+                      <td className={`px-4 sm:px-6 py-3 text-xs font-mono font-semibold ${Number(pos.unrealizedPnl) >= 0 ? 'text-emerald-400' : 'text-red-400'
+                        }`}>
                         {Number(pos.unrealizedPnl) >= 0 ? '+' : ''}{numFmt(pos.unrealizedPnl)}
                       </td>
                       <td className="px-4 sm:px-6 py-3 text-[10px] font-mono text-purple-400/50">
@@ -870,7 +855,7 @@ export default function PortfolioPage({
             <table className="w-full text-left min-w-[380px]">
               <thead className="sticky top-0 z-10" style={{ background: 'rgba(15,10,28,0.96)' }}>
                 <tr className="border-b border-white/5">
-                  {['Time','Asset','Side','Price','Size','Node'].map(h => (
+                  {['Time', 'Asset', 'Side', 'Price', 'Size', 'Node'].map(h => (
                     <th key={h} className="px-3 sm:px-6 py-3 text-[10px] font-semibold text-gray-600 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
@@ -883,9 +868,8 @@ export default function PortfolioPage({
                     </td>
                     <td className="px-3 sm:px-6 py-2.5 text-xs font-semibold text-white">{fill.coin}</td>
                     <td className="px-3 sm:px-6 py-2.5">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                        fill.side === 'B' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                      }`}>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${fill.side === 'B' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                        }`}>
                         {fill.side === 'B' ? 'Buy' : 'Sell'}
                       </span>
                     </td>

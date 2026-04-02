@@ -21,6 +21,8 @@ import {
 import { prepareForPairing, setSessionProposalHandler } from '@/lib/walletController';
 import { approveToken, switchChainNetwork } from '@/lib/walletHelpers';
 import { getAddress, parseUnits } from 'viem';
+import Horizen from '../../../public/horizen2.png';
+import Arbitrum from '../../../public/arb.png';
 
 const ARBITRUM_ID = 42161;
 const HORIZEN_ID = 26514;
@@ -275,7 +277,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   useEffect(() => {
     // const done = localStorage.getItem('nyra_tutorial_done');
     // if (!done) {
-      setTimeout(() => setTutorialStep(0), 600);
+    setTimeout(() => setTutorialStep(0), 600);
     // }
   }, []);
 
@@ -342,9 +344,11 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     setActiveTab('WITHDRAW_TEE');
     if (loading) return;
     setLoading(true);
-    try {  const bal = await apiGetBalance(address!);
+    try {
+      const bal = await apiGetBalance(address!);
       console.log(bal, "balance")
-      setServerBalance(bal.available);  } catch (e) { console.error(e); } finally { setLoading(false); }
+      setServerBalance(bal.available);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   // Bridge — switches to Horizen, then switches BACK to Arbitrum after done
@@ -815,10 +819,10 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               <span className="text-[10px] text-purple-400 font-medium">Wallet: ${bridgeMax.toFixed(2)}</span>
             </div>
             <div className={`flex items-center gap-3 p-4 rounded-2xl border transition-colors ${getBridgeError() ? 'border-red-500/40 bg-red-500/3' : 'border-white/8 bg-white/3 hover:border-purple-500/25'}`}>
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">HZ</div>
+              <div className="w-9 h-9 rounded-full bg-yellow-400 flex items-center justify-center text-xs font-bold text-white flex-shrink-0"><img className='rounded-full' src={Horizen} width={'30px'} height={'30px'} alt="Horizen Network" /></div>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-white">USDC.e</p>
-                <p className="text-xs text-gray-500">Horizen EON</p>
+                <p className="text-xs text-gray-500">Horizen Mainnet</p>
               </div>
               <div className="ml-auto flex flex-col items-end gap-1">
                 <input id="tut-bridge-amount" type="text" inputMode="decimal" value={bridgeAmount}
@@ -845,7 +849,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           <div className="space-y-2">
             <label className="text-xs text-gray-500">To</label>
             <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/3 border border-white/8">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">ARB</div>
+              <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0"><img src={Arbitrum} width={'30px'} height={'30px'} alt="Arbitrum Network" /></div>
               <div>
                 <p className="text-sm font-medium text-white">USDC</p>
                 <p className="text-xs text-gray-500">Arbitrum One</p>
@@ -854,7 +858,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             </div>
           </div>
 
-          <p className="text-xs text-gray-600 text-center">Bridge from Horizen EON → Arbitrum · ~2–5 min</p>
+          <p className="text-xs text-gray-600 text-center">Bridge from Horizen Mainnet → Arbitrum · ~2–5 min</p>
 
           {bridgePhase === 'error' && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-red-500/8 border border-red-500/20">
@@ -890,7 +894,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         <div className="space-y-3">
           <p className="text-xs text-gray-500 text-center mb-4">Cross-chain transfer in progress · Do not close</p>
           {[
-            { id: 'switching', label: 'Switch Network', desc: 'Connecting to Horizen EON' },
+            { id: 'switching', label: 'Switch Network', desc: 'Connecting to Horizen Mainnet' },
             { id: 'approving', label: 'Approve Token Spend', desc: 'Sign approval in wallet' },
             { id: 'bridging', label: 'Submit Bridge', desc: 'Confirm in wallet' },
             { id: 'waiting', label: 'Waiting for Delivery', desc: '~2–5 min' },
@@ -1022,13 +1026,13 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                 transition={{ type: 'spring', stiffness: 300, damping: 24 }}
                 onClick={() => openProxy(p)}
                 className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between group ${selectedProxy?.address === p.address ? 'bg-purple-500/10 border-purple-500/25'
-                    : isNew ? 'bg-emerald-500/5 border-emerald-500/20'
-                      : 'bg-white/2 border-white/6 hover:border-white/12'
+                  : isNew ? 'bg-emerald-500/5 border-emerald-500/20'
+                    : 'bg-white/2 border-white/6 hover:border-white/12'
                   }`}>
                 <div className="flex items-center gap-3 min-w-0">
                   <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${selectedProxy?.address === p.address ? 'bg-purple-500 text-white'
-                      : isNew ? 'bg-emerald-500/20 text-emerald-400'
-                        : 'bg-white/5 text-white/30'
+                    : isNew ? 'bg-emerald-500/20 text-emerald-400'
+                      : 'bg-white/5 text-white/30'
                     }`}>{p.num}</div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -1165,7 +1169,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               { id: 'PA', icon: <Layers size={18} />, label: 'Accounts' },
             ] as { id: MainTab; icon: React.ReactNode; label: string }[]).map(tab => (
               <button key={tab.id}
-                onClick={() => { if (tab.id === 'PA') { setActiveTab('PA'); handleSwitchToPA(); } else if(tab.id==="WITHDRAW_TEE") {setActiveTab(tab.id);handleSwitchToWithdrawTee();}else setActiveTab(tab.id); setMobileShowTerminal(false); }}
+                onClick={() => { if (tab.id === 'PA') { setActiveTab('PA'); handleSwitchToPA(); } else if (tab.id === "WITHDRAW_TEE") { setActiveTab(tab.id); handleSwitchToWithdrawTee(); } else setActiveTab(tab.id); setMobileShowTerminal(false); }}
                 className={`flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-all ${activeTab === tab.id && !mobileShowTerminal ? 'text-purple-400' : 'text-gray-600'}`}>
                 <span className={`transition-transform ${activeTab === tab.id && !mobileShowTerminal ? 'scale-110' : 'scale-100'}`}>{tab.icon}</span>
                 {tab.label}
@@ -1184,7 +1188,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           {/* Side icon bar */}
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="flex flex-col gap-2 pt-1">
             <SideTab active={activeTab === 'BRIDGE'} onClick={() => { setActiveTab('BRIDGE'); setSelectedProxy(null); }} icon={<ArrowRightLeft size={18} />} title="Bridge" />
-            <SideTab id="tut-tab-tee-withdraw" active={activeTab === 'WITHDRAW_TEE'} onClick={() => { setActiveTab('WITHDRAW_TEE');handleSwitchToWithdrawTee(); setSelectedProxy(null); }} icon={<ArrowUpRight size={18} />} title="Withdraw TEE" />
+            <SideTab id="tut-tab-tee-withdraw" active={activeTab === 'WITHDRAW_TEE'} onClick={() => { setActiveTab('WITHDRAW_TEE'); handleSwitchToWithdrawTee(); setSelectedProxy(null); }} icon={<ArrowUpRight size={18} />} title="Withdraw TEE" />
             <SideTab id="tut-tab-pa" active={activeTab === 'PA'} onClick={() => { setActiveTab('PA'); handleSwitchToPA(); }} icon={<Layers size={18} />} title="Accounts" />
           </motion.div>
 
@@ -1383,7 +1387,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     title: 'Step 1 — Bridge Funds',
     icon: '🌉',
-    desc: 'You first need to move USDC from Horizen EON into Nyra\'s secure environment on Arbitrum. Go ahead and enter an amount.',
+    desc: 'You first need to move USDC from Horizen Mainnet into Nyra\'s secure environment on Arbitrum. Go ahead and enter an amount.',
     targetId: 'tut-bridge-amount',
     tooltipSide: 'left',
     autoAdvance: true,
@@ -1614,7 +1618,7 @@ function TutorialTooltip({
     tipStyle.left = targetRect.left + targetRect.width / 2;
     tipStyle.transform = 'translate(-50%, -50%)';
   }
-  
+
   // Constrain tooltip to viewport (naively)
   if (side === 'bottom' || side === 'top') {
     tipStyle.maxWidth = '300px';
@@ -1629,7 +1633,7 @@ function TutorialTooltip({
   return (
     <div className="fixed inset-0 z-[500] pointer-events-none">
       {/* Target Highlight box (mimics the glowing green focus from their references, but in purple) */}
-      <div 
+      <div
         className="absolute border-2 border-[#7c3aed] bg-[#7c3aed]/10 pointer-events-none rounded transition-all duration-300"
         style={{
           left: targetRect.left - 4,
@@ -1665,7 +1669,7 @@ function TooltipCard({ s, step, isFirst, isLast, onNext, onPrev, onSkip, arrowSt
     <div className="relative rounded-lg shadow-2xl overflow-hidden pointer-events-auto" style={{ backgroundColor: '#7c3aed', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
       {/* The pointer arrow */}
       {arrowStyle && <div style={arrowStyle} />}
-      
+
       {/* Header / Content */}
       <div className="relative z-10 p-5 pb-4">
         <div className="flex justify-between items-start mb-2">
@@ -1678,7 +1682,7 @@ function TooltipCard({ s, step, isFirst, isLast, onNext, onPrev, onSkip, arrowSt
           </button>
         </div>
         <p className="text-[13px] text-white/90 leading-snug">{s.desc}</p>
-        
+
         {s.note && (
           <p className="text-[11px] text-white/70 mt-2 italic border-l-2 border-white/30 pl-2">
             Note: {s.note}

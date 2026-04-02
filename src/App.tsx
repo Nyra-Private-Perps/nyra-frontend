@@ -12,8 +12,10 @@ import { Providers } from './providers'
 import DashboardLayout from './components/dashboard/DashboardLayout'
 import PortfolioPage from './components/portfolio/PortfolioPage'
 import { onPendingRequest, resolveRequest, type PendingRequest } from '@/lib/walletController'
+import Nyralogo from "../public/Nyra.png";
 
 const ARBITRUM_ID = 42161
+const HORIZEN_ID = 26514;
 
 /* ─── Floating pill shape ──────────────────────────────── */
 function ElegantShape({
@@ -154,7 +156,7 @@ function LandingPage() {
   useEffect(() => {
     if (isConnected && !hasNavigatedRef.current) {
       hasNavigatedRef.current = true
-      switchChain({ chainId: ARBITRUM_ID })
+      switchChain({ chainId: HORIZEN_ID })
       setTimeout(() => navigate('/dashboard'), 300)
     }
   }, [isConnected])
@@ -179,7 +181,7 @@ function LandingPage() {
         {/* Nav */}
         <nav className="flex items-center justify-between px-6 sm:px-10 pt-8 w-full max-w-7xl mx-auto">
           <div className="flex items-center gap-2.5">
-
+            <img src={Nyralogo} width={"50px"} height={"50px"} alt="nyra logo" />
             <span className="font-head font-extrabold text-[17px] tracking-[4px] uppercase">
               NYRA
             </span>
@@ -187,12 +189,29 @@ function LandingPage() {
           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full"
             style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[10px] text-white/40 font-medium uppercase tracking-widest hidden sm:inline">Protocol v2 · Arbitrum</span>
+            <span className="text-[10px] text-white/40 font-medium uppercase tracking-widest hidden sm:inline">Protocol v2 · Horizen</span>
           </div>
         </nav>
 
         {/* HERO */}
         <div className="flex-1 flex flex-col items-center justify-center text-center px-5 sm:px-8 max-w-4xl mx-auto w-full -mt-12">
+
+          {/* Subtle user count pill */}
+          {/* <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ delay: 0.8, duration: 0.6 }}
+            className="flex items-center gap-3 px-4 py-1.5 rounded-full mb-8"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <div className="flex -space-x-2">
+              {['bg-purple-500', 'bg-blue-500', 'bg-fuchsia-500'].map((color, i) => (
+                <div key={i} className={`w-5 h-5 rounded-full ${color} opacity-80 border-2 border-[#030308]`} />
+              ))}
+            </div>
+            <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Trusted by <span className="text-white font-bold tracking-wider">14,203+</span> participants</span>
+          </motion.div> */}
+
           {/* Headline */}
           <div className="mb-12 w-full">
             <div className="flex flex-wrap items-baseline justify-center gap-x-[0.45em]">
@@ -225,7 +244,7 @@ function LandingPage() {
                   <motion.button
                     onClick={() => {
                       if (isConnected) {
-                        switchChain({ chainId: ARBITRUM_ID })
+                        switchChain({ chainId: HORIZEN_ID })
                         navigate('/dashboard')
                       } else {
                         openConnectModal()
@@ -269,7 +288,7 @@ function DashboardRoute() {
   // Enforce Arbitrum on dashboard
   useEffect(() => {
     if (!isConnected) { navigate('/') }
-    else switchChain({ chainId: ARBITRUM_ID })
+    else switchChain({ chainId: HORIZEN_ID })
   }, [isConnected])
 
   if (!isConnected) return null
@@ -330,7 +349,7 @@ function AppContent() {
   useEffect(() => {
     if (isConnected && !hasConnectedRef.current) {
       hasConnectedRef.current = true
-      switchChain({ chainId: ARBITRUM_ID })
+      switchChain({ chainId: HORIZEN_ID })
       if (location.pathname === '/' || location.pathname === '') {
         setTimeout(() => navigate('/dashboard'), 350)
       }
