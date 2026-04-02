@@ -148,6 +148,9 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [creating, setCreating] = useState(false);
   const [newestProxyAddress, setNewestProxyAddress] = useState<string | null>(null);
   const [refreshingBalance, setRefreshingBalance] = useState<string | null>(null);
+  const [teeTxStep, setTeeTxStep] = useState<TxStep>('signing');
+  const [teeTxProgress, setTeeTxProgress] = useState(0);
+  const [showTeeTxOverlay, setShowTeeTxOverlay] = useState(false);
 
   // Separate amount state for each context to avoid cross-contamination
   const [bridgeAmount, setBridgeAmount] = useState('');
@@ -378,13 +381,30 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
   const handleTeeWithdraw = async () => {
     if (!address || !teeAmount) return;
-    setTxStatus('PROCESSING');
+    setShowTeeTxOverlay(true);
+    setTeeTxStep('signing');
+    setTeeTxProgress(20);
     try {
+      await new Promise(r => setTimeout(r, 800));
+      setTeeTxStep('relaying');
+      setTeeTxProgress(60);
       const rawAmount = parseUnits(teeAmount, 6).toString();
       await apiWithdrawAvailable(address, address, rawAmount, signTypedDataAsync);
-      setTxStatus('SUCCESS');
-      setTimeout(() => { setActiveTab('PA'); loadData(); setTxStatus('IDLE'); }, 2000);
-    } catch (e: any) { setError(e.message || 'Withdrawal failed'); setTxStatus('ERROR'); }
+      setTeeTxStep('finalizing');
+      setTeeTxProgress(90);
+      await new Promise(r => setTimeout(r, 1200));
+      setTeeTxProgress(100);
+      setTimeout(() => {
+        setShowTeeTxOverlay(false);
+        setTeeTxProgress(0);
+        setActiveTab('PA');
+        loadData();
+      }, 2000);
+    } catch (e: any) {
+      setError(e.message || 'Withdrawal failed');
+      setShowTeeTxOverlay(false);
+      setTeeTxProgress(0);
+    }
   };
 
   const handleConnect = async () => {
@@ -941,32 +961,50 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         Withdraw to Arbitrum
       </motion.button>
 
+      {/* Full-screen fixed TX steps overlay for TEE withdrawal */}
       <AnimatePresence>
-        {txStatus !== 'IDLE' && view !== 'SIGNING_REQUIRED' && view !== 'CONNECT_STATUS' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 text-center"
-            style={{ background: 'rgba(12,8,22,0.96)', backdropFilter: 'blur(8px)' }}>
-            {txStatus === 'PROCESSING' ? (
-              <div className="space-y-4">
-                <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto">
-                  <Loader2 className="text-purple-400 animate-spin" size={24} />
-                </div>
-                <p className="text-sm text-gray-300">Processing…</p>
+        {showTeeTxOverlay && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex flex-col items-center justify-center p-8"
+            style={{ background: 'rgba(13,10,20,0.97)', backdropFilter: 'blur(12px)' }}>
+            <div className="w-full max-w-sm space-y-6">
+              <div className="text-center mb-2">
+                <h3 className="text-base font-semibold text-white">Processing Withdrawal</h3>
+                <p className="text-xs text-gray-500 mt-1">TEE → Arbitrum · Do not close</p>
               </div>
-            ) : txStatus === 'SUCCESS' ? (
-              <div className="space-y-4">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
-                  <Check className="text-emerald-400" size={24} />
-                </div>
-                <p className="text-sm text-gray-300 font-medium">Success</p>
+              <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                <motion.div className="h-full progress-purple rounded-full" animate={{ width: `${teeTxProgress}%` }} transition={{ duration: 0.5 }} />
               </div>
-            ) : (
-              <div className="space-y-4">
-                <AlertCircle className="text-red-400 mx-auto" size={32} />
-                <p className="text-sm text-red-400">{error}</p>
-                <button onClick={() => { setTxStatus('IDLE'); setView('ACTIONS'); }} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">Dismiss</button>
+              <div className="space-y-2">
+                {TX_STEPS.map((s, i) => {
+                  const stepOrder = ['signing', 'relaying', 'finalizing'];
+                  const currentIdx = stepOrder.indexOf(teeTxStep);
+                  const thisIdx = stepOrder.indexOf(s.id);
+                  const isCurrent = teeTxStep === s.id && teeTxProgress < 100;
+                  const isDone = thisIdx < currentIdx || teeTxProgress === 100;
+                  return (
+                    <div key={s.id} className={`flex items-center gap-3 p-3.5 rounded-2xl border transition-all ${isCurrent ? 'bg-purple-500/8 border-purple-500/20' : isDone ? 'bg-emerald-500/5 border-emerald-500/15' : 'opacity-30 border-transparent'}`}>
+                      <div className={`w-8 h-8 rounded-xl border-2 flex items-center justify-center flex-shrink-0 ${isDone ? 'bg-emerald-500 border-emerald-500' : isCurrent ? 'border-purple-500 text-purple-400' : 'border-white/10'}`}>
+                        {isDone ? <Check size={14} className="text-white" /> : isCurrent ? <Loader2 size={14} className="animate-spin" /> : <span className="text-[10px] font-semibold">{i + 1}</span>}
+                      </div>
+                      <div>
+                        <p className={`text-xs font-semibold ${isCurrent ? 'text-white' : isDone ? 'text-emerald-400' : 'text-white/20'}`}>{s.label}</p>
+                        <p className="text-[10px] text-gray-600">{s.desc}</p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            )}
+              {teeTxProgress === 100 && (
+                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center gap-3 pt-2">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                    <Check className="text-emerald-400" size={24} />
+                  </div>
+                  <p className="text-sm text-gray-300 font-medium">Withdrawal Complete</p>
+                </motion.div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1050,9 +1088,9 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
                   <motion.button onClick={(e) => {
-                      e.stopPropagation();
-                      navigator.clipboard.writeText(p.address);
-                    }} title="Copy address"
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(p.address);
+                  }} title="Copy address"
                     className="w-7 h-7 rounded-lg bg-white/4 hover:bg-purple-500/15 border border-white/6 hover:border-purple-500/30 flex items-center justify-center text-white/20 hover:text-purple-400 transition-all"
                     whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
                     <Copy size={11} />
@@ -1196,8 +1234,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         <div className="flex gap-3 items-start">
           {/* Side icon bar */}
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="flex flex-col gap-2 pt-1">
-            <SideTab active={activeTab === 'BRIDGE'} onClick={() => { setActiveTab('BRIDGE'); setSelectedProxy(null); }} icon={<ArrowRightLeft size={18} />} title="Bridge" />
-            <SideTab id="tut-tab-tee-withdraw" active={activeTab === 'WITHDRAW_TEE'} onClick={() => { setActiveTab('WITHDRAW_TEE'); handleSwitchToWithdrawTee(); setSelectedProxy(null); }} icon={<ArrowUpRight size={18} />} title="Withdraw TEE" />
+            <SideTab active={activeTab === 'BRIDGE'} onClick={() => { setActiveTab('BRIDGE'); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 280); }} icon={<ArrowRightLeft size={18} />} title="Bridge" />
+            <SideTab id="tut-tab-tee-withdraw" active={activeTab === 'WITHDRAW_TEE'} onClick={() => { setActiveTab('WITHDRAW_TEE'); handleSwitchToWithdrawTee(); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 280); }} icon={<ArrowUpRight size={18} />} title="Withdraw TEE" />
             <SideTab id="tut-tab-pa" active={activeTab === 'PA'} onClick={() => { setActiveTab('PA'); handleSwitchToPA(); }} icon={<Layers size={18} />} title="Accounts" />
           </motion.div>
 
