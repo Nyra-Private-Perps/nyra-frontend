@@ -12,7 +12,7 @@ import { Providers } from './providers'
 import DashboardLayout from './components/dashboard/DashboardLayout'
 import PortfolioPage from './components/portfolio/PortfolioPage'
 import { onPendingRequest, resolveRequest, type PendingRequest } from '@/lib/walletController'
-import Nyralogo from "../public/Nyra.png";
+import Nyralogo from "../public/nyra-logo.png";
 
 const ARBITRUM_ID = 42161
 const HORIZEN_ID = 26514;
@@ -181,10 +181,7 @@ function LandingPage() {
         {/* Nav */}
         <nav className="flex items-center justify-between px-6 sm:px-10 pt-8 w-full max-w-7xl mx-auto">
           <div className="flex items-center gap-2.5">
-            <img src={Nyralogo} width={"50px"} height={"50px"} alt="nyra logo" />
-            <span className="font-head font-extrabold text-[17px] tracking-[4px] uppercase">
-              NYRA
-            </span>
+            <img src={Nyralogo} width={"150px"} height={"100px"} alt="nyra logo" />
           </div>
           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full"
             style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>

@@ -8,7 +8,7 @@ import { useAccount, useSwitchChain, useBalance } from 'wagmi'
 import { formatUnits } from 'viem'
 import Horizen from '../../../public/horizen2.png';
 import Arbitrum from '../../../public/arb.png';
-import Nyralogo from '../../../public/Nyra.png';
+import Nyralogo from '../../../public/nyra-logo.png';
 
 interface HeaderProps {
   currentPage: 'dashboard' | 'portfolio'
@@ -190,10 +190,8 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
             onClick={() => onNavigate('dashboard')}
             whileHover={{ scale: 1.02 }}
           >
-            <img src={Nyralogo} width={"50px"} height={"50px"} alt="nyra logo" />
-            <span className="font-head font-extrabold text-[17px] tracking-[4px] uppercase">
-              NYRA
-            </span>
+            <img src={Nyralogo} width={"150px"} height={"100px"} alt="nyra logo" />
+
           </motion.div>
 
           {/* Desktop Nav */}

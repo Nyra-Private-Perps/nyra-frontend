@@ -7,7 +7,7 @@ import {
   Zap, Shield, Plus, ChevronRight, X, Loader2, Check,
   ArrowUpRight, Link2, ArrowDownLeft, Layers, RefreshCw,
   AlertCircle, ArrowRightLeft, Fuel, ExternalLink, ChevronLeft,
-  AlertTriangle
+  AlertTriangle, Copy
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import Header from './Header';
@@ -1036,7 +1036,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                     }`}>{p.num}</div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-gray-400 truncate">{p.address.slice(0, 12)}...</span>
+                      <span className="font-mono text-xs text-gray-400 truncate" title={p.address}>{p.address.slice(0, 12)}...</span>
                       {isNew && (
                         <span className="new-badge inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-bold text-emerald-400 flex-shrink-0">✦ NEW</span>
                       )}
@@ -1049,6 +1049,14 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                  <motion.button onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(p.address);
+                    }} title="Copy address"
+                    className="w-7 h-7 rounded-lg bg-white/4 hover:bg-purple-500/15 border border-white/6 hover:border-purple-500/30 flex items-center justify-center text-white/20 hover:text-purple-400 transition-all"
+                    whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                    <Copy size={11} />
+                  </motion.button>
                   <motion.button onClick={e => refreshProxyBalance(e, p)} title="Refresh balance"
                     className="w-7 h-7 rounded-lg bg-white/4 hover:bg-purple-500/15 border border-white/6 hover:border-purple-500/30 flex items-center justify-center text-white/20 hover:text-purple-400 transition-all"
                     whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
@@ -1169,6 +1177,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               { id: 'PA', icon: <Layers size={18} />, label: 'Accounts' },
             ] as { id: MainTab; icon: React.ReactNode; label: string }[]).map(tab => (
               <button key={tab.id}
+                id={tab.id === 'PA' ? 'tut-tab-pa' : tab.id === 'WITHDRAW_TEE' ? 'tut-tab-tee-withdraw' : undefined}
                 onClick={() => { if (tab.id === 'PA') { setActiveTab('PA'); handleSwitchToPA(); } else if (tab.id === "WITHDRAW_TEE") { setActiveTab(tab.id); handleSwitchToWithdrawTee(); } else setActiveTab(tab.id); setMobileShowTerminal(false); }}
                 className={`flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-all ${activeTab === tab.id && !mobileShowTerminal ? 'text-purple-400' : 'text-gray-600'}`}>
                 <span className={`transition-transform ${activeTab === tab.id && !mobileShowTerminal ? 'scale-110' : 'scale-100'}`}>{tab.icon}</span>
@@ -1535,7 +1544,7 @@ function TutorialTooltip({
   useEffect(() => {
     if (step === null) return;
     const s = TUTORIAL_STEPS[step];
-    if (!s.targetId) {
+    if (!s || !s.targetId) {
       setTargetRect(null);
       return;
     }
