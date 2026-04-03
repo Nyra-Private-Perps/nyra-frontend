@@ -531,7 +531,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     setTerminalVisible(false);
     setTimeout(() => {
       setSelectedProxy(null); setView('ACTIONS');
-    }, 280); // matches exit transition duration
+    }, 340); // matches exit transition duration
     setMobileShowTerminal(false);
   };
 
@@ -1198,10 +1198,10 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
         {/* Mobile main content */}
         <div className="flex-1 px-4 pt-4 pb-24 overflow-y-auto">
-          <AnimatePresence mode="wait">
-            {activeTab === 'BRIDGE' && <BridgeContent key="m-bridge" />}
-            {activeTab === 'WITHDRAW_TEE' && <WithdrawTeeContent key="m-tee" />}
-            {activeTab === 'PA' && <ProxyList key="m-pa" />}
+          <AnimatePresence>
+            {activeTab === 'BRIDGE' && <BridgeContent key="bridge" />}
+            {activeTab === 'WITHDRAW_TEE' && <WithdrawTeeContent key="tee" />}
+            {activeTab === 'PA' && <ProxyList key="pa" />}
           </AnimatePresence>
         </div>
 
@@ -1234,8 +1234,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         <div className="flex gap-3 items-start">
           {/* Side icon bar */}
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="flex flex-col gap-2 pt-1">
-            <SideTab active={activeTab === 'BRIDGE'} onClick={() => { setActiveTab('BRIDGE'); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 280); }} icon={<ArrowRightLeft size={18} />} title="Bridge" />
-            <SideTab id="tut-tab-tee-withdraw" active={activeTab === 'WITHDRAW_TEE'} onClick={() => { setActiveTab('WITHDRAW_TEE'); handleSwitchToWithdrawTee(); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 280); }} icon={<ArrowUpRight size={18} />} title="Withdraw TEE" />
+            <SideTab active={activeTab === 'BRIDGE'} onClick={() => { setActiveTab('BRIDGE'); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 340); }} icon={<ArrowRightLeft size={18} />} title="Bridge" />
+            <SideTab id="tut-tab-tee-withdraw" active={activeTab === 'WITHDRAW_TEE'} onClick={() => { setActiveTab('WITHDRAW_TEE'); handleSwitchToWithdrawTee(); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 340); }} icon={<ArrowUpRight size={18} />} title="Withdraw TEE" />
             <SideTab id="tut-tab-pa" active={activeTab === 'PA'} onClick={() => { setActiveTab('PA'); handleSwitchToPA(); }} icon={<Layers size={18} />} title="Accounts" />
           </motion.div>
 
@@ -1245,15 +1245,15 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             transition={{ duration: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
             className="glass-card rounded-3xl flex"
             style={{
-              width: terminalVisible ? 820 : 440,
+              width: selectedProxy ? 820 : 440,
               minHeight: 520,
-              overflow: 'hidden',
+              overflow: 'clip',
               transition: 'width 0.32s cubic-bezier(0.25,0.1,0.25,1)',
               boxShadow: '0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(168,85,247,0.08)',
             }}>
 
             {/* Explorer pane */}
-            <div className="flex-1 p-7 flex flex-col min-w-0">
+            <div className="p-7 flex flex-col flex-shrink-0" style={{ width: 440 }}>
               {wrongChain && (
                 <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-500/8 border border-amber-500/25 mb-5 flex-shrink-0">
                   <AlertTriangle size={14} className="text-amber-400 flex-shrink-0" />
@@ -1273,7 +1273,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               {selectedProxy && (
                 <motion.div
                   key={selectedProxy.address}
-                  initial={{ opacity: 0, x: 20 }} animate={{ opacity: terminalVisible ? 1 : 0, x: terminalVisible ? 0 : 20 }} exit={{ opacity: 0, x: 20 }}
+                  initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
                   transition={{ duration: 0.28, ease: [0.25, 0.1, 0.25, 1] }}
                   className="border-l border-white/5 flex flex-col p-6 relative overflow-hidden flex-shrink-0"
                   style={{ width: 360, background: 'rgba(15,10,28,0.7)' }}>
