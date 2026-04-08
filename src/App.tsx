@@ -241,40 +241,30 @@ function LandingPage() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2, duration: 0.8 }}
             className="flex flex-col items-center">
 
-            <ConnectButton.Custom>
-              {({ openConnectModal, mounted }) => (
-                <div {...(!mounted && { 'aria-hidden': true, style: { opacity: 0, pointerEvents: 'none' as const } })}>
-                  <motion.button
-                    onClick={() => {
-                      if (isConnected) {
-                        switchChain({ chainId: HORIZEN_ID })
-                        navigate('/dashboard')
-                      } else {
-                        openConnectModal()
-                      }
-                    }}
-                    className="relative inline-flex items-center gap-3 px-9 py-4 sm:py-5 rounded-full text-white font-semibold text-base sm:text-lg overflow-hidden"
-                    style={{
-                      background: 'linear-gradient(135deg,#9333ea 0%,#7c3aed 50%,#4f46e5 100%)',
-                      boxShadow: '0 0 0 1px rgba(168,85,247,0.3), 0 8px 32px rgba(147,51,234,0.35)',
-                    }}
-                    whileHover={{ scale: 1.04, boxShadow: '0 0 60px rgba(147,51,234,0.6),0 0 0 1px rgba(168,85,247,0.5)' }}
-                    whileTap={{ scale: 0.97 }}
-                    transition={{ duration: 0.18 }}>
-                    <motion.span
-                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.13] to-transparent -skew-x-12 pointer-events-none"
-                      initial={{ x: '-120%' }} whileHover={{ x: '220%' }}
-                      transition={{ duration: 0.55, ease: 'easeInOut' }} />
-                    <span className="relative z-10">Get Started</span>
-                    <motion.span className="relative z-10"
-                      animate={{ x: [0, 4, 0] }}
-                      transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}>
-                      <ArrowRight size={18} />
-                    </motion.span>
-                  </motion.button>
-                </div>
-              )}
-            </ConnectButton.Custom>
+            <motion.button
+              onClick={() => {
+                if (isConnected) switchChain({ chainId: HORIZEN_ID })
+                navigate('/dashboard')
+              }}
+              className="relative inline-flex items-center gap-3 px-9 py-4 sm:py-5 rounded-full text-white font-semibold text-base sm:text-lg overflow-hidden"
+              style={{
+                background: 'linear-gradient(135deg,#9333ea 0%,#7c3aed 50%,#4f46e5 100%)',
+                boxShadow: '0 0 0 1px rgba(168,85,247,0.3), 0 8px 32px rgba(147,51,234,0.35)',
+              }}
+              whileHover={{ scale: 1.04, boxShadow: '0 0 60px rgba(147,51,234,0.6),0 0 0 1px rgba(168,85,247,0.5)' }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.18 }}>
+              <motion.span
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.13] to-transparent -skew-x-12 pointer-events-none"
+                initial={{ x: '-120%' }} whileHover={{ x: '220%' }}
+                transition={{ duration: 0.55, ease: 'easeInOut' }} />
+              <span className="relative z-10">Get Started</span>
+              <motion.span className="relative z-10"
+                animate={{ x: [0, 4, 0] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}>
+                <ArrowRight size={18} />
+              </motion.span>
+            </motion.button>
           </motion.div>
         </div>
       </div>
@@ -288,13 +278,10 @@ function DashboardRoute() {
   const { switchChain } = useSwitchChain()
   const navigate = useNavigate()
 
-  // Enforce Arbitrum on dashboard
+  // Only switch chain when connected — do NOT redirect if disconnected
   useEffect(() => {
-    if (!isConnected) { navigate('/') }
-    else switchChain({ chainId: HORIZEN_ID })
+    if (isConnected) switchChain({ chainId: HORIZEN_ID })
   }, [isConnected])
-
-  if (!isConnected) return null
 
   return (
     <motion.div
@@ -347,7 +334,7 @@ function AppContent() {
   const navigate = useNavigate()
   const { switchChain } = useSwitchChain()
 
-  // On wallet connect: switch to Arbitrum + go to dashboard
+  // On wallet connect: switch chain and navigate to dashboard if still on landing
   const hasConnectedRef = useRef(false)
   useEffect(() => {
     if (isConnected && !hasConnectedRef.current) {
@@ -359,7 +346,8 @@ function AppContent() {
     }
     if (!isConnected) {
       hasConnectedRef.current = false
-      navigate('/')
+      // Only redirect to landing from portfolio (which requires auth), not from dashboard
+      if (location.pathname === '/portfolio') navigate('/')
     }
   }, [isConnected])
 

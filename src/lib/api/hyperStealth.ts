@@ -107,7 +107,7 @@ export interface RegisterResponse { success: boolean; spendPubKey: string; viewP
 export interface GenerateAddressResponse { success: boolean; stealthAddress: string; }
 export interface DeriveKeyResponse { success: boolean; stealthAddress: string; stealthPrivateKey: string; }
 export interface StealthAddressEntry { address: string; createdAt: number; }
-export interface StealthAddressesResponse { success: boolean; recipientAddress: string; stealthAddresses: StealthAddressEntry[]; count: number; }
+export interface StealthAddressesResponse { success: boolean; recipientAddress: string; stealthAddresses: StealthAddressEntry[]; count: number; total: number; page: number; pageSize: number; }
 export interface DepositResponse { success: boolean; txHash: string; }
 export interface BalanceResponse { success: boolean; userAddress: string; stealthAddress: string; deposited: string; credited: string; available: string; }
 export interface BridgeQuoteResponse { success: boolean; sourceChain: string; amount: string; minReceived: string; nativeFee: string; lzTokenFee: string; }
@@ -163,19 +163,27 @@ export async function apiDeriveKey(eoaAddress: string, stealthAddress: string, s
   return post<DeriveKeyResponse>("/derive-key", { recipientAddress: getAddress(eoaAddress), stealthAddress: getAddress(stealthAddress), signature });
 }
 
-/** POST /stealth-addresses */
+/** POST /stealth-addresses — caches the Register signature per session to avoid repeated wallet prompts */
 export async function apiStealthAddresses(
   eoaAddress: string, 
   signer: SignTypedDataFn,
   page: number = 1,
   pageSize: number = 20
 ): Promise<StealthAddressesResponse> {
-  const signature = await signWithWagmi(
-    signer,
-    { Register: [{ name: "signer", type: "address" }] },
-    "Register",
-    { signer: getAddress(eoaAddress) }
-  );
+  const cacheKey = `nyra_sa_sig_${eoaAddress.toLowerCase()}`;
+  let signature = sessionStorage.getItem(cacheKey);
+
+  if (!signature) {
+    // Only ask the user to sign once per session
+    signature = await signWithWagmi(
+      signer,
+      { Register: [{ name: "signer", type: "address" }] },
+      "Register",
+      { signer: getAddress(eoaAddress) }
+    );
+    sessionStorage.setItem(cacheKey, signature);
+  }
+
   return post<StealthAddressesResponse>("/stealth-addresses", { 
     recipientAddress: getAddress(eoaAddress), 
     signature,

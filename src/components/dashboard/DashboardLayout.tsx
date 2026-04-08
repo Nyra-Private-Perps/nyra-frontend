@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { useAccount, useSignTypedData, useBalance, useSwitchChain } from 'wagmi';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -193,6 +193,20 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const signingHandledRef = useRef(false);
   const signingActiveRef = useRef(false);
   const selectedProxyRef = useRef<Proxy | null>(null);
+  // Guard against concurrent loadData invocations (prevents the multiple-reload glitch)
+  const loadingInFlightRef = useRef(false);
+
+  // Dynamic tutorial steps: insert "Connect Wallet" step at index 1 when disconnected
+  const effectiveSteps = useMemo(
+    () => TUTORIAL_STEPS.filter(s => !s.onlyWhenDisconnected || !address),
+    [address]
+  );
+
+  // When wallet connects, the connect-wallet step disappears from effectiveSteps.
+  // tutorialStep index stays the same — it now points to "Bridge Funds" automatically.
+  // The TutorialTooltip useEffect will re-fire because effectiveSteps is now in its deps.
+  // Nothing extra needed here, but keep this for clarity.
+  useEffect(() => { /* effectiveSteps handled reactively via useMemo + TutorialTooltip deps */ }, [address]);
 
   const HORIZEN_USDC_ADDRESS = (import.meta as any).env?.VITE_HORIZEN_USDC_ADDRESS;
   const CENTRAL_WALLET = (import.meta as any).env?.VITE_CENTRAL_WALLET;
@@ -258,36 +272,45 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
   // Data loading
   const loadData = async (page = 1, append = false) => {
+    // Prevent concurrent calls — only one loadData can run at a time
+    if (loadingInFlightRef.current) return;
+    loadingInFlightRef.current = true;
+
     const eoa = getStoredEOA() || address;
-    if (!eoa || !signTypedDataAsync) { setLoading(false); return; }
-    if (page > 1) setLoadingMore(true);
-    let spotUsdc = 0;
+    if (!eoa || !signTypedDataAsync) { setLoading(false); loadingInFlightRef.current = false; return; }
+    if (page > 1) setLoadingMore(true); else setLoading(true);
     try {
       const res = await apiStealthAddresses(eoa, signTypedDataAsync, page, 20);
-      const list = await Promise.all(res.stealthAddresses.map(async (s: any, i: number) => {
-        let connected = false, balance = '0', pnl = '0';
-        try {
-          const state = await getHLUserState(s.address);
-          const spotBalance = await getHLSpotState(s.address);
-          console.log(spotBalance, "spot balance");
-          const usdcSpot = spotBalance?.balances?.find(
-            (b: any) => b.coin === 'USDC' || b.coin === 'USDC:0xe3b'
-          );
-          console.log(usdcSpot?.total, "spot balance2");
-          spotUsdc = usdcSpot ? Number(usdcSpot.total ?? 0) : 0;
-          if (state?.marginSummary && Number(state.marginSummary.accountValue) > 0) {
-            connected = true; balance = state.marginSummary.accountValue; pnl = state.marginSummary.unrealizedPnl;
-          }
-        } catch { }
-        return { num: i + 1, address: s.address, connected, balance, pnl, hlBalance: spotUsdc ?? '0' };
+      // Correct sequential numbering across pages (page 2 starts at 21, not 1)
+      const offset = (page - 1) * 20;
+      const list = res.stealthAddresses.map((s: any, i: number) => ({
+        num: offset + i + 1,
+        address: s.address,
+        connected: false,
+        balance: '0',
+        pnl: '0',
+        hlBalance: 0,
       }));
-      setHasMoreProxies(list.length === 20);
-      setProxies(prev => append ? [...prev, ...list] : list);
-      const bal = await apiGetBalance(eoa);
-      console.log(bal, "balance")
-      setServerBalance(bal.available);   // available = deposited - credited
-      setWithdrawProxy(spotUsdc || 0);   // total sent to HL
 
+      // Use total from API to correctly detect if more pages exist
+      const loadedSoFar = append ? offset + list.length : list.length;
+      setHasMoreProxies(loadedSoFar < (res.total ?? 0));
+
+      if (!append) {
+        // Fresh load — reset page counter to 1
+        setProxyPage(1);
+        setProxies(list);
+      } else {
+        setProxies(prev => [...prev, ...list]);
+      }
+
+      // Fetch server balance (TEE wallet) — lightweight, needed for withdraw tab
+      try {
+        const bal = await apiGetBalance(eoa);
+        setServerBalance(bal.available);
+      } catch { }
+
+      // Load supported chains config once
       if (!supportedChains.length) {
         try {
           const chainsConfig = await apiGetSupportedChains();
@@ -295,14 +318,18 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         } catch (e) { console.error('Failed to load chains', e); }
       }
     } catch (e) { console.error(e); }
-    finally { setLoading(false); setLoadingMore(false); }
+    finally { setLoading(false); setLoadingMore(false); loadingInFlightRef.current = false; }
   };
 
   const loadMoreProxies = () => {
-    if (loadingMore || !hasMoreProxies) return;
-    const nextPage = proxyPage + 1;
-    setProxyPage(nextPage);
-    loadData(nextPage, true);
+    if (loadingMore || !hasMoreProxies || loadingInFlightRef.current) return;
+    // Use functional updater so we always read the latest page value
+    setProxyPage(prev => {
+      const nextPage = prev + 1;
+      // Schedule outside the setter to avoid calling loadData inside setState
+      setTimeout(() => loadData(nextPage, true), 0);
+      return nextPage;
+    });
   };
 
   // Tutorial: show on first dashboard visit (temporarily forced for testing)
@@ -331,7 +358,15 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   }, [tutorialStep, activeTab, selectedProxy, wcUri, view, bridgeAmount, depositAmount, destination, withdrawAmount, teeAmount, sourceChainName]);
 
   useEffect(() => {
-    setProxies([]); setLoading(false); setSelectedProxy(null); setTerminalVisible(false); setMobileShowTerminal(false);
+    // Reset all proxy/pagination state when wallet changes
+    setProxies([]);
+    setLoading(false);
+    setSelectedProxy(null);
+    setTerminalVisible(false);
+    setMobileShowTerminal(false);
+    setProxyPage(1);
+    setHasMoreProxies(true);
+    loadingInFlightRef.current = false; // release any in-flight guard from previous session
     // When user connects wallet, if they selected a source chain, try to switch to it
     if (address && sourceChainName) {
       const config = supportedChains.find(c => c.name === sourceChainName);
@@ -364,9 +399,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
   const handleSwitchToPA = async () => {
     setActiveTab('PA');
-    if (loading) return;
-    setLoading(true);
-    try { await loadData(); } catch (e) { console.error(e); } finally { setLoading(false); }
+    // loadData manages its own loading state and in-flight guard — just call it directly
+    loadData(1, false);
   };
 
   const handleSwitchToWithdrawTee = async () => {
@@ -1086,11 +1120,23 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           maxLabel={`$${teeMax.toFixed(2)}`} onMax={() => setTeeAmount(teeMax.toFixed(2))}
           error={getTeeError()} suffix="USDC" />
       </div>
-      <motion.button id="tut-tee-withdraw-btn-exec" onClick={() => { handleTeeWithdraw(); if (tutorialStep === 16) setTutorialStep(17); }} disabled={!!getTeeError() || !teeAmount || teeAmount === '0'}
-        className="w-full h-12 rounded-2xl btn-purple text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-        Withdraw to Arbitrum
-      </motion.button>
+      {!address ? (
+        <ConnectButton.Custom>
+          {({ openConnectModal }: any) => (
+            <motion.button onClick={openConnectModal}
+              className="w-full h-12 rounded-2xl btn-purple text-white font-semibold text-sm"
+              whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+              Connect Wallet
+            </motion.button>
+          )}
+        </ConnectButton.Custom>
+      ) : (
+        <motion.button id="tut-tee-withdraw-btn-exec" onClick={() => { handleTeeWithdraw(); if (tutorialStep === 16) setTutorialStep(17); }} disabled={!!getTeeError() || !teeAmount || teeAmount === '0'}
+          className="w-full h-12 rounded-2xl btn-purple text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+          Withdraw to Arbitrum
+        </motion.button>
+      )}
 
       {/* Full-screen fixed TX steps overlay for TEE withdrawal */}
       <AnimatePresence>
@@ -1150,106 +1196,127 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           <h2 className="text-xl font-semibold text-white">Registry</h2>
           <p className="text-xs text-gray-500 mt-0.5">Your stealth proxy accounts</p>
         </div>
-        <motion.button id="tut-proxy-create"
-          onClick={async () => {
-            if (!address || !signTypedDataAsync) return;
-            setCreating(true);
-            try {
-              await apiRegister(address, signTypedDataAsync);
-              const { stealthAddress } = await apiGenerateAddress(address);
-              const { stealthPrivateKey } = await apiDeriveKey(address, stealthAddress, signTypedDataAsync);
-              localStorage.setItem('nyra_eoa', address);
-              localStorage.setItem('nyra_active_stealth', stealthAddress);
-              localStorage.setItem('nyra_stealth_key', stealthPrivateKey);
-              sessionStorage.setItem('nyra_stealth_address', stealthAddress);
-              sessionStorage.setItem('nyra_stealth_key', stealthPrivateKey);
-              setNewestProxyAddress(stealthAddress);
-              setTimeout(() => setNewestProxyAddress(null), 30000);
-            } catch (e) { console.error(e); }
-            finally { await loadData(); setCreating(false); }
-          }}
-          className="w-9 h-9 rounded-full bg-purple-500/10 border border-purple-500/25 flex items-center justify-center text-purple-400 hover:bg-purple-500/20 transition-all"
-          whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
-          {creating ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
-        </motion.button>
+        {/* Hide + button when disconnected */}
+        {address && (
+          <motion.button id="tut-proxy-create"
+            onClick={async () => {
+              if (!address || !signTypedDataAsync) return;
+              setCreating(true);
+              try {
+                await apiRegister(address, signTypedDataAsync);
+                const { stealthAddress } = await apiGenerateAddress(address);
+                const { stealthPrivateKey } = await apiDeriveKey(address, stealthAddress, signTypedDataAsync);
+                localStorage.setItem('nyra_eoa', address);
+                localStorage.setItem('nyra_active_stealth', stealthAddress);
+                localStorage.setItem('nyra_stealth_key', stealthPrivateKey);
+                sessionStorage.setItem('nyra_stealth_address', stealthAddress);
+                sessionStorage.setItem('nyra_stealth_key', stealthPrivateKey);
+                setNewestProxyAddress(stealthAddress);
+                setTimeout(() => setNewestProxyAddress(null), 30000);
+              } catch (e) { console.error(e); }
+              finally { await loadData(); setCreating(false); }
+            }}
+            className="w-9 h-9 rounded-full bg-purple-500/10 border border-purple-500/25 flex items-center justify-center text-purple-400 hover:bg-purple-500/20 transition-all"
+            whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+            {creating ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+          </motion.button>
+        )}
       </div>
 
-      <div
-        className="space-y-2 overflow-y-auto max-h-[420px] pr-1 custom-scrollbar"
-        onScroll={(e) => {
-          const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
-          if (scrollHeight - scrollTop <= clientHeight + 50) loadMoreProxies();
-        }}
-      >
-        {loading ? (
-          Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-16 rounded-2xl shimmer" />)
-        ) : proxies.length === 0 ? (
-          <div className="text-center py-12 text-gray-600">
-            <Shield size={32} className="mx-auto mb-3 opacity-20" />
-            <p className="text-sm">No proxy accounts yet</p>
-            <p className="text-xs mt-1">Click + to create your first stealth proxy</p>
+      {/* Proxy list body */}
+      {!address ? (
+        <div className="flex flex-col items-center justify-center flex-1 gap-4 py-12 border border-dashed border-white/10 rounded-2xl bg-white/2">
+          <Shield size={32} className="opacity-20 text-purple-400" />
+          <div className="text-center">
+            <p className="text-sm text-gray-300 font-medium">Connect wallet to get started</p>
+            <p className="text-xs text-gray-600 mt-1">Create stealth proxies and trade privately</p>
           </div>
-        ) : (
-          proxies.map(p => {
-            const isNew = newestProxyAddress === p.address;
-            const isRefreshing = refreshingBalance === p.address;
-            return (
-              <motion.div key={p.address}
-                id={p.num === 1 ? 'tut-proxy-item' : undefined}
-                initial={isNew ? { opacity: 0, y: -12, scale: 0.97 } : { opacity: 1, y: 0, scale: 1 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-                onClick={() => openProxy(p)}
-                className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between group ${selectedProxy?.address === p.address ? 'bg-purple-500/10 border-purple-500/25'
-                  : isNew ? 'bg-emerald-500/5 border-emerald-500/20'
-                    : 'bg-white/2 border-white/6 hover:border-white/12'
-                  }`}>
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${selectedProxy?.address === p.address ? 'bg-purple-500 text-white'
-                    : isNew ? 'bg-emerald-500/20 text-emerald-400'
-                      : 'bg-white/5 text-white/30'
-                    }`}>{p.num}</div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-gray-400 truncate" title={p.address}>{p.address.slice(0, 12)}...</span>
-                      {isNew && (
-                        <span className="new-badge inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-bold text-emerald-400 flex-shrink-0">✦ NEW</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${p.connected ? 'bg-emerald-400' : 'bg-white/15'}`} />
-                      <span className={`text-[10px] font-medium ${p.connected ? 'text-emerald-400' : 'text-white/25'}`}>{p.connected ? 'Active' : 'Inactive'}</span>
-                      {Number(p.balance) > 0 && <span className="text-[10px] text-purple-400 ml-1">${Number(p.balance).toFixed(2)}</span>}
+          <ConnectButton.Custom>
+            {({ openConnectModal }: any) => (
+              <button onClick={openConnectModal} className="px-5 py-2 rounded-xl btn-purple text-white text-xs font-semibold">
+                Connect Wallet
+              </button>
+            )}
+          </ConnectButton.Custom>
+        </div>
+      ) : (
+        <div
+          className="space-y-2 overflow-y-auto max-h-[420px] pr-1 custom-scrollbar"
+          onScroll={(e) => {
+            const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
+            if (scrollHeight - scrollTop <= clientHeight + 50) loadMoreProxies();
+          }}
+        >
+          {loading ? (
+            Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-16 rounded-2xl shimmer" />)
+          ) : proxies.length === 0 ? (
+            <div className="text-center py-12 text-gray-600">
+              <Shield size={32} className="mx-auto mb-3 opacity-20" />
+              <p className="text-sm">No proxy accounts yet</p>
+              <p className="text-xs mt-1">Click + to create your first stealth proxy</p>
+            </div>
+          ) : (
+            proxies.map(p => {
+              const isNew = newestProxyAddress === p.address;
+              const isRefreshing = refreshingBalance === p.address;
+              return (
+                <motion.div key={p.address}
+                  id={p.num === 1 ? 'tut-proxy-item' : undefined}
+                  initial={isNew ? { opacity: 0, y: -12, scale: 0.97 } : { opacity: 1, y: 0, scale: 1 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+                  onClick={() => openProxy(p)}
+                  className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between group ${selectedProxy?.address === p.address ? 'bg-purple-500/10 border-purple-500/25'
+                    : isNew ? 'bg-emerald-500/5 border-emerald-500/20'
+                      : 'bg-white/2 border-white/6 hover:border-white/12'
+                    }`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${selectedProxy?.address === p.address ? 'bg-purple-500 text-white'
+                      : isNew ? 'bg-emerald-500/20 text-emerald-400'
+                        : 'bg-white/5 text-white/30'
+                      }`}>{p.num}</div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-gray-400 truncate" title={p.address}>{p.address.slice(0, 12)}...</span>
+                        {isNew && (
+                          <span className="new-badge inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-bold text-emerald-400 flex-shrink-0">✦ NEW</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${p.connected ? 'bg-emerald-400' : 'bg-white/15'}`} />
+                        <span className={`text-[10px] font-medium ${p.connected ? 'text-emerald-400' : 'text-white/25'}`}>{p.connected ? 'Active' : 'Inactive'}</span>
+                        {Number(p.balance) > 0 && <span className="text-[10px] text-purple-400 ml-1">${Number(p.balance).toFixed(2)}</span>}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                  <motion.button onClick={(e) => {
-                    e.stopPropagation();
-                    navigator.clipboard.writeText(p.address);
-                  }} title="Copy address"
-                    className="w-7 h-7 rounded-lg bg-white/4 hover:bg-purple-500/15 border border-white/6 hover:border-purple-500/30 flex items-center justify-center text-white/20 hover:text-purple-400 transition-all"
-                    whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                    <Copy size={11} />
-                  </motion.button>
-                  <motion.button onClick={e => refreshProxyBalance(e, p)} title="Refresh balance"
-                    className="w-7 h-7 rounded-lg bg-white/4 hover:bg-purple-500/15 border border-white/6 hover:border-purple-500/30 flex items-center justify-center text-white/20 hover:text-purple-400 transition-all"
-                    whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                    <RefreshCw size={11} className={isRefreshing ? 'spin-once text-purple-400' : ''} />
-                  </motion.button>
-                  <ChevronRight size={15} onClick={() => openProxy(p)}
-                    className={`cursor-pointer transition-all ${selectedProxy?.address === p.address ? 'text-purple-400 translate-x-0.5' : 'text-white/15 group-hover:text-white/40'}`} />
-                </div>
-              </motion.div>
-            );
-          })
-        )}
-        {loadingMore && (
-          <div className="flex justify-center p-2">
-            <Loader2 className="animate-spin text-purple-500 opacity-50" size={16} />
-          </div>
-        )}
-      </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                    <motion.button onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(p.address);
+                    }} title="Copy address"
+                      className="w-7 h-7 rounded-lg bg-white/4 hover:bg-purple-500/15 border border-white/6 hover:border-purple-500/30 flex items-center justify-center text-white/20 hover:text-purple-400 transition-all"
+                      whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                      <Copy size={11} />
+                    </motion.button>
+                    <motion.button onClick={e => refreshProxyBalance(e, p)} title="Refresh balance"
+                      className="w-7 h-7 rounded-lg bg-white/4 hover:bg-purple-500/15 border border-white/6 hover:border-purple-500/30 flex items-center justify-center text-white/20 hover:text-purple-400 transition-all"
+                      whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                      <RefreshCw size={11} className={isRefreshing ? 'spin-once text-purple-400' : ''} />
+                    </motion.button>
+                    <ChevronRight size={15} onClick={() => openProxy(p)}
+                      className={`cursor-pointer transition-all ${selectedProxy?.address === p.address ? 'text-purple-400 translate-x-0.5' : 'text-white/15 group-hover:text-white/40'}`} />
+                  </div>
+                </motion.div>
+              );
+            })
+          )}
+          {loadingMore && (
+            <div className="flex justify-center p-2">
+              <Loader2 className="animate-spin text-purple-500 opacity-50" size={16} />
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 
@@ -1497,9 +1564,10 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       {/* ── TUTORIAL OVERLAY ──────────────────────────────── */}
       <TutorialTooltip
         step={tutorialStep}
+        effectiveSteps={effectiveSteps}
         onNext={() => {
           const next = (tutorialStep ?? 0) + 1;
-          if (next >= TUTORIAL_STEPS.length) {
+          if (next >= effectiveSteps.length) {
             setTutorialStep(null);
             localStorage.setItem('nyra_tutorial_done', 'true');
           } else {
@@ -1537,7 +1605,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               </div>
               {/* Steps */}
               <div className="px-6 py-5 space-y-3 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                {TUTORIAL_STEPS.map((s, i) => (
+                {effectiveSteps.map((s, i) => (
                   <div key={i} className="flex gap-3">
                     <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center mt-0.5"
                       style={{ background: 'rgba(147,51,234,0.15)', border: '1px solid rgba(168,85,247,0.25)' }}>
@@ -1589,6 +1657,7 @@ interface TutorialStepDef {
   targetId?: string | string[];
   tooltipSide?: 'top' | 'bottom' | 'left' | 'right' | 'center';
   autoAdvance?: boolean;
+  onlyWhenDisconnected?: boolean;
 }
 
 const TUTORIAL_STEPS: TutorialStepDef[] = [
@@ -1599,6 +1668,15 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     targetId: 'tut-bridge-network',
     tooltipSide: 'left',
     autoAdvance: true,
+  },
+  {
+    title: 'Step 2 — Connect Wallet',
+    icon: '🔑',
+    desc: 'Connect your wallet to get started. Click the "Connect" button in the top-right corner to link your wallet.',
+    targetId: 'tut-header-connect',
+    tooltipSide: 'bottom',
+    autoAdvance: true,
+    onlyWhenDisconnected: true,
   },
   {
     title: 'Step 2 — Bridge Funds',
@@ -1739,9 +1817,10 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
 
 /* ─── TUTORIAL POPOVER (MATCHES USER SCREENSHOT STYLE) ───── */
 function TutorialTooltip({
-  step, onNext, onPrev, onSkip,
+  step, effectiveSteps, onNext, onPrev, onSkip,
 }: {
   step: number | null;
+  effectiveSteps: TutorialStepDef[];
   onNext: () => void;
   onPrev: () => void;
   onSkip: () => void;
@@ -1750,7 +1829,7 @@ function TutorialTooltip({
 
   useEffect(() => {
     if (step === null) return;
-    const s = TUTORIAL_STEPS[step];
+    const s = effectiveSteps[step];
     if (!s || !s.targetId) {
       setTargetRect(null);
       return;
@@ -1790,12 +1869,13 @@ function TutorialTooltip({
       window.removeEventListener('scroll', updateRect, true);
       clearInterval(interval);
     };
-  }, [step]);
+  }, [step, effectiveSteps]);
 
   if (step === null) return null;
-  const s = TUTORIAL_STEPS[step];
+  const s = effectiveSteps[step];
+  if (!s) return null;
   const isFirst = step === 0;
-  const isLast = step === TUTORIAL_STEPS.length - 1;
+  const isLast = step === effectiveSteps.length - 1;
 
   // If no target is found (e.g., element is temporarily missing during an animation), return null
   // The polling interval will instantly automatically mount this popover when the element finishes animating into layout
@@ -1873,14 +1953,14 @@ function TutorialTooltip({
         aria-label={s.title}
         style={tipStyle}
       >
-        <TooltipCard s={s} step={step} isFirst={isFirst} isLast={isLast} onNext={onNext} onPrev={onPrev} onSkip={onSkip} arrowStyle={arrowStyle} />
+        <TooltipCard s={s} step={step} isFirst={isFirst} isLast={isLast} totalSteps={effectiveSteps.length} onNext={onNext} onPrev={onPrev} onSkip={onSkip} arrowStyle={arrowStyle} />
       </motion.div>
     </div>
   );
 }
 
 // Inner content of the tooltip (Built to match user's simple popover expectation)
-function TooltipCard({ s, step, isFirst, isLast, onNext, onPrev, onSkip, arrowStyle }: any) {
+function TooltipCard({ s, step, isFirst, isLast, totalSteps, onNext, onPrev, onSkip, arrowStyle }: any) {
   return (
     <div className="relative rounded-lg shadow-2xl overflow-hidden pointer-events-auto" style={{ backgroundColor: '#7c3aed', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
       {/* The pointer arrow */}
@@ -1909,7 +1989,7 @@ function TooltipCard({ s, step, isFirst, isLast, onNext, onPrev, onSkip, arrowSt
       {/* Footer / Controls */}
       <div className="relative z-10 px-5 py-3 flex items-center justify-between" style={{ backgroundColor: 'rgba(0,0,0,0.15)' }}>
         <span className="text-[11px] font-semibold text-white/80">
-          Step {step + 1} of {TUTORIAL_STEPS.length}
+          Step {step + 1} of {totalSteps}
         </span>
         <div className="flex items-center gap-1">
           {!isFirst && (

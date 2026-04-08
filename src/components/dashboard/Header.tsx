@@ -196,7 +196,7 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
 
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-1">
-            {navItems.map((item, index) => (
+            {navItems.filter(item => address || item.value !== 'portfolio').map((item, index) => (
               <motion.button
                 key={item.value}
                 onClick={() => onNavigate(item.value)}
@@ -257,6 +257,7 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
                 <div {...(!ready && { 'aria-hidden': true, style: { opacity: 0, pointerEvents: 'none', userSelect: 'none' } })}>
                   {!connected ? (
                     <motion.button
+                      id="tut-header-connect"
                       onClick={openConnectModal}
                       className="btn-purple px-3 md:px-4 py-1.5 md:py-2 rounded-full text-white text-xs md:text-sm font-semibold"
                       whileHover={{ scale: 1.04 }}
@@ -311,7 +312,7 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
               {isWrongNetwork && <span className="ml-auto text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full">Switch</span>}
             </button>
 
-            {navItems.map(item => (
+            {navItems.filter(item => address || item.value !== 'portfolio').map(item => (
               <button
                 key={item.value}
                 onClick={() => { onNavigate(item.value); setMobileMenuOpen(false); }}
