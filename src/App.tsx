@@ -12,6 +12,7 @@ import { Providers } from './providers'
 import DashboardLayout from './components/dashboard/DashboardLayout'
 import PortfolioPage from './components/portfolio/PortfolioPage'
 import { onPendingRequest, resolveRequest, type PendingRequest } from '@/lib/walletController'
+import { apiGetMetrics } from '@/lib/api/hyperStealth'
 import Nyralogo from "../public/nyra-logo.png";
 
 const ARBITRUM_ID = 42161
@@ -151,6 +152,11 @@ function LandingPage() {
   const { isConnected } = useAccount()
   const { switchChain } = useSwitchChain()
   const hasNavigatedRef = useRef(false)
+  const [metrics, setMetrics] = useState<{ totalStealthAddresses: number } | null>(null)
+
+  useEffect(() => {
+    apiGetMetrics().then(res => setMetrics(res)).catch(console.error)
+  }, [])
 
   // If already connected, open dashboard immediately
   useEffect(() => {
@@ -194,7 +200,7 @@ function LandingPage() {
         <div className="flex-1 flex flex-col items-center justify-center text-center px-5 sm:px-8 max-w-4xl mx-auto w-full -mt-12">
 
           {/* Subtle user count pill */}
-          {/* <motion.div
+          <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ delay: 0.8, duration: 0.6 }}
@@ -206,8 +212,8 @@ function LandingPage() {
                 <div key={i} className={`w-5 h-5 rounded-full ${color} opacity-80 border-2 border-[#030308]`} />
               ))}
             </div>
-            <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Trusted by <span className="text-white font-bold tracking-wider">14,203+</span> participants</span>
-          </motion.div> */}
+            <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Trusted by <span className="text-white font-bold tracking-wider">{metrics ? `${metrics.totalStealthAddresses}+` : '...'}</span> participants</span>
+          </motion.div>
 
           {/* Headline */}
           <div className="mb-12 w-full">

@@ -3,15 +3,18 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import { useAccount, useSignTypedData, useBalance, useSwitchChain } from 'wagmi';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import {
   Zap, Shield, Plus, ChevronRight, X, Loader2, Check,
   ArrowUpRight, Link2, ArrowDownLeft, Layers, RefreshCw,
   AlertCircle, ArrowRightLeft, Fuel, ExternalLink, ChevronLeft,
-  AlertTriangle, Copy
+  AlertTriangle, Copy,
+  ChevronDown
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import Header from './Header';
-import { onPendingRequest, resolveRequest, type PendingRequest } from '@/lib/walletController';
+import { onPendingRequest, resolveRequest, type PendingRequest } from '@/lib/walletController'
+import { apiGetSupportedChains, apiDirectDeposit } from '@/lib/api/hyperStealth';
 import {
   apiRegister, apiGenerateAddress, apiDeriveKey, apiStealthAddresses,
   getStoredEOA, getHLUserState, apiGetBalance, apiDeposit,
@@ -164,6 +167,16 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [view, setView] = useState<TerminalView>('ACTIONS');
   const [txStep, setTxStep] = useState<TxStep>('signing');
   const [progress, setProgress] = useState(0);
+
+  // Pagination & Multi-chain
+  const [supportedChains, setSupportedChains] = useState<any[]>([]);
+  const [sourceChainName, setSourceChainName] = useState<string>("");
+  const [showChainSelector, setShowChainSelector] = useState(false);
+
+  // Pagination bounds
+  const [proxyPage, setProxyPage] = useState(1);
+  const [hasMoreProxies, setHasMoreProxies] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [connectStep, setConnectStep] = useState<ConnectStep>('idle');
   const [pendingReq, setPendingReq] = useState<PendingRequest | null>(null);
   const [hlConnected, setHlConnected] = useState(false);
@@ -244,12 +257,13 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   }, [teeAmount, teeMax]);
 
   // Data loading
-  const loadData = async () => {
+  const loadData = async (page = 1, append = false) => {
     const eoa = getStoredEOA() || address;
     if (!eoa || !signTypedDataAsync) { setLoading(false); return; }
+    if (page > 1) setLoadingMore(true);
     let spotUsdc = 0;
     try {
-      const res = await apiStealthAddresses(eoa, signTypedDataAsync);
+      const res = await apiStealthAddresses(eoa, signTypedDataAsync, page, 20);
       const list = await Promise.all(res.stealthAddresses.map(async (s: any, i: number) => {
         let connected = false, balance = '0', pnl = '0';
         try {
@@ -267,13 +281,28 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         } catch { }
         return { num: i + 1, address: s.address, connected, balance, pnl, hlBalance: spotUsdc ?? '0' };
       }));
-      setProxies(list);
+      setHasMoreProxies(list.length === 20);
+      setProxies(prev => append ? [...prev, ...list] : list);
       const bal = await apiGetBalance(eoa);
       console.log(bal, "balance")
       setServerBalance(bal.available);   // available = deposited - credited
       setWithdrawProxy(spotUsdc || 0);   // total sent to HL
+
+      if (!supportedChains.length) {
+        try {
+          const chainsConfig = await apiGetSupportedChains();
+          setSupportedChains(chainsConfig.chains || []);
+        } catch (e) { console.error('Failed to load chains', e); }
+      }
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setLoadingMore(false); }
+  };
+
+  const loadMoreProxies = () => {
+    if (loadingMore || !hasMoreProxies) return;
+    const nextPage = proxyPage + 1;
+    setProxyPage(nextPage);
+    loadData(nextPage, true);
   };
 
   // Tutorial: show on first dashboard visit (temporarily forced for testing)
@@ -287,32 +316,29 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   // Tutorial auto-advance logic mapped to exact 17-step sequence
   useEffect(() => {
     if (tutorialStep === null) return;
-    // Step 0 -> 1: User typed amount
-    if (tutorialStep === 0 && Number(bridgeAmount) > 0) setTutorialStep(1);
-    // Step 2 -> 3: User switched to Accounts tab
-    if (tutorialStep === 2 && activeTab === 'PA') setTutorialStep(3);
-    // Step 3 -> 4: User selected a proxy
-    if (tutorialStep === 3 && selectedProxy) setTutorialStep(4);
-    // Step 4 -> 5: User pasted a WC URI
-    if (tutorialStep === 4 && wcUri.trim().startsWith('wc:')) setTutorialStep(5);
-    // Step 6 -> 7: User opened deposit view
-    if (tutorialStep === 6 && view === 'DEPOSIT_INPUT') setTutorialStep(7);
-    // Step 7 -> 8: User entered deposit amount
-    if (tutorialStep === 7 && Number(depositAmount) > 0) setTutorialStep(8);
-    // Step 10 -> 11: User opened withdraw view (from proxy)
-    if (tutorialStep === 10 && view === 'WITHDRAW_INPUT') setTutorialStep(11);
-    // Step 11 -> 12: User entered a recipient address
-    if (tutorialStep === 11 && destination.trim().length > 5) setTutorialStep(12);
-    // Step 12 -> 13: User entered withdraw amount
-    if (tutorialStep === 12 && Number(withdrawAmount) > 0) setTutorialStep(13);
-    // Step 14 -> 15: User switched to TEE withdraw tab
-    if (tutorialStep === 14 && activeTab === 'WITHDRAW_TEE') setTutorialStep(15);
-    // Step 15 -> 16: User entered TEE withdraw amount
-    if (tutorialStep === 15 && Number(teeAmount) > 0) setTutorialStep(16);
-  }, [tutorialStep, activeTab, selectedProxy, wcUri, view, bridgeAmount, depositAmount, destination, withdrawAmount, teeAmount]);
+    if (tutorialStep === 0 && sourceChainName !== '') setTutorialStep(1);
+    if (tutorialStep === 1 && Number(bridgeAmount) > 0) setTutorialStep(2);
+    if (tutorialStep === 3 && activeTab === 'PA') setTutorialStep(4);
+    if (tutorialStep === 4 && selectedProxy) setTutorialStep(5);
+    if (tutorialStep === 5 && wcUri.trim().startsWith('wc:')) setTutorialStep(6);
+    if (tutorialStep === 7 && view === 'DEPOSIT_INPUT') setTutorialStep(8);
+    if (tutorialStep === 8 && Number(depositAmount) > 0) setTutorialStep(9);
+    if (tutorialStep === 11 && view === 'WITHDRAW_INPUT') setTutorialStep(12);
+    if (tutorialStep === 12 && destination.trim().length > 5) setTutorialStep(13);
+    if (tutorialStep === 13 && Number(withdrawAmount) > 0) setTutorialStep(14);
+    if (tutorialStep === 15 && activeTab === 'WITHDRAW_TEE') setTutorialStep(16);
+    if (tutorialStep === 16 && Number(teeAmount) > 0) setTutorialStep(17);
+  }, [tutorialStep, activeTab, selectedProxy, wcUri, view, bridgeAmount, depositAmount, destination, withdrawAmount, teeAmount, sourceChainName]);
 
   useEffect(() => {
     setProxies([]); setLoading(false); setSelectedProxy(null); setTerminalVisible(false); setMobileShowTerminal(false);
+    // When user connects wallet, if they selected a source chain, try to switch to it
+    if (address && sourceChainName) {
+      const config = supportedChains.find(c => c.name === sourceChainName);
+      if (config?.chainId) {
+        try { switchChain({ chainId: config.chainId }) } catch(e) {}
+      }
+    }
   }, [address]);
 
   useEffect(() => { selectedProxyRef.current = selectedProxy; }, [selectedProxy]);
@@ -345,6 +371,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
   const handleSwitchToWithdrawTee = async () => {
     setActiveTab('WITHDRAW_TEE');
+    try { switchChain({ chainId: 42161 }); } catch(e) {}
     if (loading) return;
     setLoading(true);
     try {
@@ -354,28 +381,46 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  // Bridge — switches to Horizen, then switches BACK to Arbitrum after done
+  // Bridge — switches to selected chain, then switches BACK to Arbitrum after done
   const handleBridge = async () => {
     setBridgePhase('switching'); setBridgeError(null);
     try {
+      const isDirect = isOnArbitrum || sourceChainName === 'arbitrum';
       const rawAmount = parseUnits(bridgeAmount, 6).toString();
-      await switchChainNetwork(HORIZEN_ID);
-      setBridgePhase('approving');
-      await approveToken(HORIZEN_USDC_ADDRESS, CENTRAL_WALLET, rawAmount);
-      setBridgePhase('bridging');
-      const res = await apiBridge(address!, rawAmount, signTypedDataAsync);
-      setBridgePhase('waiting');
-      let delivered = false;
-      while (!delivered) {
-        const s = await apiGetBridgeStatus(res.txHash);
-        if (s.status === 'DELIVERED') delivered = true;
-        else if (s.status === 'FAILED') throw new Error('Bridge transaction failed on-chain');
-        else await new Promise(r => setTimeout(r, 3000));
+
+      if (!isDirect) {
+        const sc = supportedChains.find(c => c.name === sourceChainName);
+        if (sc) await switchChainNetwork(sc.chainId);
       }
-      // Switch back to Arbitrum after bridge completes
-      await switchChainNetwork(ARBITRUM_ID);
-      setBridgePhase('done');
-      await loadData();
+
+      setBridgePhase('approving');
+      // For Horizen or Direct, the CENTRAL_WALLET is the spender. For Stargate it might be stargatePool contract.
+      // Based on docs, user approves central wallet on source chain USDC contract.
+      // E.g. HORIZEN_USDC_ADDRESS for horizen, or ARBITRUM_USDC address for direct deposit.
+      const sc = supportedChains.find(c => c.name === sourceChainName);
+      const tokenAddress = isDirect ? "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" : (sc ? sc.token : HORIZEN_USDC_ADDRESS); // arbitrum native usdc
+
+      await approveToken(tokenAddress, CENTRAL_WALLET, rawAmount);
+
+      setBridgePhase('bridging');
+      if (isDirect) {
+        await apiDirectDeposit(address!, rawAmount, signTypedDataAsync);
+        setBridgePhase('done');
+        await loadData();
+      } else {
+        const res = await apiBridge(address!, rawAmount, signTypedDataAsync, sourceChainName);
+        setBridgePhase('waiting');
+        let delivered = false;
+        while (!delivered) {
+          const s = await apiGetBridgeStatus(res.txHash);
+          if (s.status === 'DELIVERED') delivered = true;
+          else if (s.status === 'FAILED') throw new Error('Bridge transaction failed on-chain');
+          else await new Promise(r => setTimeout(r, 3000));
+        }
+        await switchChainNetwork(ARBITRUM_ID);
+        setBridgePhase('done');
+        await loadData();
+      }
     } catch (e: any) { setBridgeError(e.message || 'Bridge failed'); setBridgePhase('error'); }
   };
 
@@ -551,19 +596,13 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   };
 
   // ── Wrong chain banner ──────────────────────────────────
-  const WrongChainBanner = () => wrongChain ? (
+  const WrongChainBanner = () => (!address || activeTab === 'BRIDGE') ? null : wrongChain ? (
     <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-500/8 border border-amber-500/25">
       <AlertTriangle size={15} className="text-amber-400 flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-xs text-amber-400 font-medium">Wrong network</p>
         <p className="text-[10px] text-amber-400/70 mt-0.5">Switch to Arbitrum One to use Nyra</p>
       </div>
-      <button
-        onClick={() => switchChain({ chainId: ARBITRUM_ID })}
-        className="flex-shrink-0 text-[10px] font-bold text-amber-400 border border-amber-400/30 px-3 py-1.5 rounded-lg hover:bg-amber-500/10 transition-colors"
-      >
-        Switch
-      </button>
     </div>
   ) : null;
 
@@ -630,14 +669,14 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                   <p className="text-[10px] text-emerald-400 font-medium">Session Active — Trading Enabled</p>
                 </div>
                 <motion.a id="tut-start-trading" href="https://app.hyperliquid.xyz/trade" target="_blank" rel="noopener noreferrer"
-                  onClick={() => { if (tutorialStep === 9) setTutorialStep(10); }}
+                  onClick={() => { if (tutorialStep === 10) setTutorialStep(11); }}
                   className="flex items-center justify-center gap-2 w-full h-11 rounded-xl btn-purple text-white font-semibold text-sm"
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                   <ExternalLink size={14} /> Start Trading
                 </motion.a>
                 <div className="grid grid-cols-2 gap-2">
-                  <ActionBtn id="tut-deposit-btn" icon={<ArrowDownLeft size={16} />} label="Deposit" sub="Fund account" onClick={() => setView('DEPOSIT_INPUT')} />
-                  <ActionBtn id="tut-withdraw-btn" icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => setView('WITHDRAW_INPUT')} />
+                  <ActionBtn id="tut-deposit-btn" icon={<ArrowDownLeft size={16} />} label="Deposit" sub="Fund account" onClick={() => { setView('DEPOSIT_INPUT'); try { switchChain({ chainId: 26514 }); } catch(e) {} }} />
+                  <ActionBtn id="tut-withdraw-btn" icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => { setView('WITHDRAW_INPUT'); try { switchChain({ chainId: 42161 }); } catch(e) {} }} />
                 </div>
                 <div className="pt-3 border-t border-white/5 space-y-2">
                   <WcInput value={wcUri} onChange={setWcUri} placeholder="wc:... (re-pair session)" />
@@ -650,13 +689,13 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             ) : (
               <motion.div key="disc-act" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
-                  <ActionBtn id="tut-deposit-btn" icon={<ArrowDownLeft size={16} />} label="Deposit" sub="From server" onClick={() => setView('DEPOSIT_INPUT')} />
-                  <ActionBtn id="tut-withdraw-btn" icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => setView('WITHDRAW_INPUT')} />
+                  <ActionBtn id="tut-deposit-btn" icon={<ArrowDownLeft size={16} />} label="Deposit" sub="From server" onClick={() => { setView('DEPOSIT_INPUT'); try { switchChain({ chainId: 26514 }); } catch(e) {} }} />
+                  <ActionBtn id="tut-withdraw-btn" icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => { setView('WITHDRAW_INPUT'); try { switchChain({ chainId: 42161 }); } catch(e) {} }} />
                 </div>
                 <div className="pt-3 border-t border-white/5 space-y-2">
                   <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Connect Hyperliquid</p>
                   <div id="tut-wc-input"><WcInput value={wcUri} onChange={setWcUri} placeholder="wc:abc... (paste from Hyperliquid)" /></div>
-                  <motion.button id="tut-connect-btn" onClick={() => { handleConnect(); if (tutorialStep === 5) setTutorialStep(6); }} disabled={!wcUri.startsWith('wc:')}
+                  <motion.button id="tut-connect-btn" onClick={() => { handleConnect(); if (tutorialStep === 6) setTutorialStep(7); }} disabled={!wcUri.startsWith('wc:')}
                     className="w-full h-11 rounded-xl btn-purple text-white font-medium text-xs disabled:opacity-30 disabled:cursor-not-allowed"
                     whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
                     Connect to Hyperliquid
@@ -685,7 +724,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setView('ACTIONS')} className="h-11 rounded-xl bg-white/5 border border-white/8 text-sm text-gray-400 hover:bg-white/8 transition-all">Back</button>
-              <motion.button id="tut-deposit-btn-exec" onClick={() => { handleDepositFlow(); if (tutorialStep === 8) setTutorialStep(9); }}
+              <motion.button id="tut-deposit-btn-exec" onClick={() => { handleDepositFlow(); if (tutorialStep === 9) setTutorialStep(10); }}
                 disabled={!!getDepositError() || !depositAmount || depositAmount === '0'}
                 className="h-11 rounded-xl btn-purple text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                 whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
@@ -721,12 +760,22 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setView('ACTIONS')} className="h-11 rounded-xl bg-white/5 border border-white/8 text-sm text-gray-400 hover:bg-white/8 transition-all">Cancel</button>
-              <motion.button id="tut-withdraw-submit-proxy" onClick={() => { handleWithdrawFlow(); if (tutorialStep === 13) setTutorialStep(14); }}
-                disabled={!!getWithdrawError() || !withdrawAmount || withdrawAmount === '0' || !destination}
-                className="h-11 rounded-xl btn-purple text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-                Withdraw
-              </motion.button>
+              {!address ? (
+                <ConnectButton.Custom>
+                  {({ openConnectModal }: any) => (
+                    <motion.button onClick={openConnectModal} className="h-11 rounded-xl btn-purple text-white text-sm font-medium" whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                      Connect Wallet
+                    </motion.button>
+                  )}
+                </ConnectButton.Custom>
+              ) : (
+                <motion.button id="tut-withdraw-submit-proxy" onClick={() => { handleWithdrawFlow(); if (tutorialStep === 14) setTutorialStep(15); }}
+                  disabled={!!getWithdrawError() || !withdrawAmount || withdrawAmount === '0' || !destination}
+                  className="h-11 rounded-xl btn-purple text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                  whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                  Withdraw
+                </motion.button>
+              )}
             </div>
           </motion.div>
         )}
@@ -817,126 +866,208 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   );
 
   // ── BRIDGE CONTENT ──────────────────────────────────────
-  const BridgeContent = () => (
-    <motion.div key="bridge" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-white">Funding</h2>
-          <p className="text-xs text-gray-500 mt-0.5 font-mono">Stargate V2 Cross-Chain</p>
-        </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20">
-          <Fuel size={12} className="text-purple-400" />
-          <span className="text-[10px] text-purple-400 font-medium">Cross-chain</span>
-        </div>
-      </div>
+  const BridgeContent = () => {
+    const isDirect = isOnArbitrum || sourceChainName === 'arbitrum';
+    const activeChainConfig = supportedChains.find(c => c.name === sourceChainName);
 
-      {bridgePhase === 'idle' || bridgePhase === 'error' ? (
-        <div className="space-y-4">
-          {/* From */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <label className="text-xs text-gray-500">From</label>
-              <span className="text-[10px] text-purple-400 font-medium">Wallet: ${bridgeMax.toFixed(2)}</span>
+    return (
+      <motion.div key="bridge" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-white">Funding</h2>
+            <p className="text-xs text-gray-500 mt-0.5 font-mono">{isDirect ? 'Direct Arbitrum Deposit' : 'Stargate V2 Cross-Chain'}</p>
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20">
+            <Fuel size={12} className="text-purple-400" />
+            <span className="text-[10px] text-purple-400 font-medium">{isDirect ? 'Instant' : 'Cross-chain'}</span>
+          </div>
+        </div>
+
+        {bridgePhase === 'idle' || bridgePhase === 'error' ? (
+          <div className="space-y-4">
+            {/* From */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-xs text-gray-500">From</label>
+                <span className="text-[10px] text-purple-400 font-medium">Wallet: ${bridgeMax.toFixed(2)}</span>
+              </div>
+              <div 
+              id="tut-bridge-network"
+              onClick={() => setShowChainSelector(true)}
+              className={`flex items-center gap-3 p-4 rounded-2xl border cursor-pointer transition-colors ${getBridgeError() ? 'border-red-500/40 bg-red-500/3' : 'border-white/8 bg-white/3 hover:border-purple-500/25'}`}>
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${isDirect ? 'bg-blue-600' : sourceChainName === 'horizen' ? 'bg-blue-900 border border-blue-700' : sourceChainName === '' ? 'bg-white/10' : 'bg-purple-500'}`}>
+                {isDirect ? <img src={Arbitrum} width={'30px'} height={'30px'} alt="Arbitrum Network" className="rounded-full" /> :
+                 sourceChainName === 'horizen' ? <img src={Horizen} width={'30px'} height={'30px'} alt="Horizen Network" className="rounded-full" /> : 
+                 sourceChainName === '' ? '🌐' :
+                 (activeChainConfig?.name.charAt(0).toUpperCase() || 'C')}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-medium ${sourceChainName === '' ? 'text-white/60' : 'text-white'}`}>{sourceChainName === '' ? 'Select Asset' : `USDC${isDirect ? '' : '.e'}`}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <p className="text-xs text-gray-400 capitalize">{sourceChainName === '' ? 'Select Chain' : isDirect ? 'Arbitrum (Direct)' : sourceChainName === 'horizen' ? 'Horizen Mainnet' : sourceChainName}</p>
+                  <ChevronDown size={12} className="text-gray-500" />
+                </div>
+              </div>
+                <div className="ml-auto flex flex-col items-end gap-1" onClick={e => e.stopPropagation()}>
+                  <input id="tut-bridge-amount" type="text" inputMode="decimal" value={bridgeAmount}
+                    onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setBridgeAmount(v); }}
+                    placeholder="0"
+                    className={`bg-transparent text-right text-2xl font-semibold w-24 outline-none placeholder:text-gray-700 ${getBridgeError() ? 'text-red-400' : 'text-white'}`} />
+                  <button onClick={() => setBridgeAmount(bridgeMax.toFixed(2))} className="text-[9px] text-purple-400 font-bold hover:text-purple-300 transition-colors">USE MAX</button>
+                </div>
+              </div>
+              {getBridgeError() && (
+                <div className="flex items-center gap-1.5 text-red-400 px-1">
+                  <AlertCircle size={11} /><p className="text-[11px] font-medium">{getBridgeError()}</p>
+                </div>
+              )}
             </div>
-            <div className={`flex items-center gap-3 p-4 rounded-2xl border transition-colors ${getBridgeError() ? 'border-red-500/40 bg-red-500/3' : 'border-white/8 bg-white/3 hover:border-purple-500/25'}`}>
-              <div className="w-9 h-9 rounded-full bg-yellow-400 flex items-center justify-center text-xs font-bold text-white flex-shrink-0"><img className='rounded-full' src={Horizen} width={'30px'} height={'30px'} alt="Horizen Network" /></div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-white">USDC.e</p>
-                <p className="text-xs text-gray-500">Horizen Mainnet</p>
-              </div>
-              <div className="ml-auto flex flex-col items-end gap-1">
-                <input id="tut-bridge-amount" type="text" inputMode="decimal" value={bridgeAmount}
-                  onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setBridgeAmount(v); }}
-                  placeholder="0"
-                  className={`bg-transparent text-right text-2xl font-semibold w-24 outline-none placeholder:text-gray-700 ${getBridgeError() ? 'text-red-400' : 'text-white'}`} />
-                <button onClick={() => setBridgeAmount(bridgeMax.toFixed(2))} className="text-[9px] text-purple-400 font-bold hover:text-purple-300 transition-colors">USE MAX</button>
+
+            <div className="flex justify-center">
+              <div className="w-8 h-8 rounded-full bg-white/5 border border-white/8 flex items-center justify-center">
+                <ArrowDownLeft size={14} className="text-gray-400" />
               </div>
             </div>
-            {getBridgeError() && (
-              <div className="flex items-center gap-1.5 text-red-400 px-1">
-                <AlertCircle size={11} /><p className="text-[11px] font-medium">{getBridgeError()}</p>
+
+            {/* To */}
+            <div className="space-y-2">
+              <label className="text-xs text-gray-500">To</label>
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/3 border border-white/8">
+                <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0"><img src={Arbitrum} width={'30px'} height={'30px'} alt="Arbitrum Network" /></div>
+                <div>
+                  <p className="text-sm font-medium text-white">USDC</p>
+                  <p className="text-xs text-gray-500">Arbitrum One</p>
+                </div>
+                <div className="ml-auto text-gray-400 text-sm tabular-nums">~{bridgeAmount || '0'}</div>
               </div>
+            </div>
+
+            <p className="text-xs text-gray-600 text-center">Bridge from Horizen Mainnet → Arbitrum · ~2–5 min</p>
+
+            {bridgePhase === 'error' && (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-red-500/8 border border-red-500/20">
+                <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+                <p className="text-xs text-red-400">{bridgeError}</p>
+              </div>
+            )}
+
+            {!address ? (
+              <ConnectButton.Custom>
+                {({ openConnectModal }: any) => (
+                  <motion.button onClick={openConnectModal} className="w-full h-12 rounded-2xl btn-purple text-white font-semibold text-sm" whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                    Connect Wallet
+                  </motion.button>
+                )}
+              </ConnectButton.Custom>
+            ) : (
+              <motion.button id="tut-bridge-btn" onClick={() => { handleBridge(); if (tutorialStep === 2) setTutorialStep(3); }}
+                disabled={!!getBridgeError() || !bridgeAmount || bridgeAmount === '0'}
+                className="w-full h-12 rounded-2xl btn-purple text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                Bridge Liquidity
+              </motion.button>
             )}
           </div>
 
-          <div className="flex justify-center">
-            <div className="w-8 h-8 rounded-full bg-white/5 border border-white/8 flex items-center justify-center">
-              <ArrowDownLeft size={14} className="text-gray-400" />
+        ) : bridgePhase === 'done' ? (
+          <div className="flex flex-col items-center gap-6 py-8">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center">
+              <Check size={28} className="text-emerald-400" />
             </div>
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-white mb-2">Bridge Complete</h3>
+              <p className="text-sm text-gray-400">Funds delivered. You can now deposit to any proxy account.</p>
+            </div>
+            <button onClick={() => { setBridgePhase('idle'); setBridgeError(null); setBridgeAmount(''); }}
+              className="px-6 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/8 transition-all">
+              Bridge More
+            </button>
           </div>
 
-          {/* To */}
-          <div className="space-y-2">
-            <label className="text-xs text-gray-500">To</label>
-            <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/3 border border-white/8">
-              <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0"><img src={Arbitrum} width={'30px'} height={'30px'} alt="Arbitrum Network" /></div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500 text-center mb-4">{isDirect ? 'Direct Deposit in progress · Do not close' : 'Cross-chain transfer in progress · Do not close'}</p>
+            {[
+              { id: 'switching', label: 'Switch Network', desc: `Connecting to ${sourceChainName}` },
+              { id: 'approving', label: 'Approve Token Spend', desc: 'Sign approval in wallet' },
+              { id: 'bridging', label: isDirect ? 'Deposit Funds' : 'Submit Bridge', desc: 'Confirm in wallet' },
+              ...(isDirect ? [] : [{ id: 'waiting', label: 'Waiting for Delivery', desc: '~2–5 min' }]),
+            ].map((step, i) => {
+              const phases = isDirect ? ['switching', 'approving', 'bridging', 'done'] : ['switching', 'approving', 'bridging', 'waiting', 'done'];
+              const isDone = phases.indexOf(bridgePhase) > phases.indexOf(step.id);
+              const isCurrent = bridgePhase === step.id;
+              return (
+                <div key={step.id} className={`flex items-center gap-4 p-3.5 rounded-2xl border transition-all ${isCurrent ? 'bg-purple-500/8 border-purple-500/25' : isDone ? 'bg-emerald-500/5 border-emerald-500/15' : 'opacity-30 border-transparent'}`}>
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 border-2 ${isDone ? 'bg-emerald-500 border-emerald-500' : isCurrent ? 'border-purple-500 text-purple-400' : 'border-white/10 text-white/20'}`}>
+                    {isDone ? <Check size={14} className="text-white" /> : isCurrent ? <Loader2 size={14} className="animate-spin" /> : <span className="text-[10px] font-bold">{i + 1}</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-semibold ${isCurrent ? 'text-white' : isDone ? 'text-emerald-400' : 'text-white/20'}`}>{step.label}</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">{step.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </motion.div>
+    );
+  };
+
+  // ── CHAIN SELECTOR CONTENT ────────────────────────────────
+  const ChainSelectorContent = () => (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between mb-5 flex-shrink-0">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Select Network</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Choose funding source chain</p>
+        </div>
+        <motion.button onClick={() => setShowChainSelector(false)}
+          className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-500 hover:text-white transition-all"
+          whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+          <X size={13} />
+        </motion.button>
+      </div>
+
+      <div className="space-y-2 overflow-y-auto pr-1 custom-scrollbar flex-1 pb-4">
+        {[
+          { id: 'arbitrum', name: 'Arbitrum (Direct)', isDirect: true, chainId: 42161 },
+          { id: 'horizen', name: 'Horizen Mainnet', isDirect: false, chainId: 26514 },
+          { id: 'ethereum', name: 'Ethereum', isDirect: false, chainId: 1 },
+          { id: 'optimism', name: 'Optimism', isDirect: false, chainId: 10 },
+          { id: 'base', name: 'Base', isDirect: false, chainId: 8453 },
+          { id: 'polygon', name: 'Polygon', isDirect: false, chainId: 137 },
+          { id: 'avalanche', name: 'Avalanche', isDirect: false, chainId: 43114 },
+          ...supportedChains.filter(c => !['horizen', 'ethereum', 'optimism', 'base', 'polygon', 'avalanche'].includes(c.name)).map(c => ({ id: c.name, name: c.name.charAt(0).toUpperCase() + c.name.slice(1), isDirect: false, chainId: c.chainId }))
+        ].map(chain => (
+          <motion.div key={chain.id}
+            onClick={() => { 
+                setSourceChainName(chain.id); 
+                setShowChainSelector(false); 
+                if (chain.chainId) { try { switchChain({ chainId: chain.chainId }); } catch(e) {} }
+            }}
+            className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between group ${sourceChainName === chain.id ? 'bg-purple-500/10 border-purple-500/25' : 'bg-white/2 border-white/6 hover:border-white/12'
+              }`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 shadow-lg ${chain.id === 'arbitrum' ? 'bg-blue-600' : chain.id === 'horizen' ? 'bg-blue-900 border border-blue-700' : 'bg-purple-500/20'}`}>
+                {chain.id === 'arbitrum' ? <img src={Arbitrum} width={'30px'} height={'30px'} alt="Arbitrum Network" className="rounded-full" /> :
+                  chain.id === 'horizen' ? <img src={Horizen} width={'30px'} height={'30px'} alt="Horizen Network" className="rounded-full" /> :
+                    chain.name.charAt(0)}
+              </div>
               <div>
-                <p className="text-sm font-medium text-white">USDC</p>
-                <p className="text-xs text-gray-500">Arbitrum One</p>
+                <p className="text-sm font-medium text-white">{chain.name}</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">{chain.isDirect ? 'Direct USD Deposit' : 'Cross-chain via Stargate'}</p>
               </div>
-              <div className="ml-auto text-gray-400 text-sm tabular-nums">~{bridgeAmount || '0'}</div>
             </div>
-          </div>
-
-          <p className="text-xs text-gray-600 text-center">Bridge from Horizen Mainnet → Arbitrum · ~2–5 min</p>
-
-          {bridgePhase === 'error' && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-red-500/8 border border-red-500/20">
-              <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
-              <p className="text-xs text-red-400">{bridgeError}</p>
-            </div>
-          )}
-
-          <motion.button id="tut-bridge-btn" onClick={() => { handleBridge(); if (tutorialStep === 1) setTutorialStep(2); }}
-            disabled={!!getBridgeError() || !bridgeAmount || bridgeAmount === '0'}
-            className="w-full h-12 rounded-2xl btn-purple text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-            whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-            Bridge Liquidity
-          </motion.button>
-        </div>
-
-      ) : bridgePhase === 'done' ? (
-        <div className="flex flex-col items-center gap-6 py-8">
-          <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center">
-            <Check size={28} className="text-emerald-400" />
-          </div>
-          <div className="text-center">
-            <h3 className="text-lg font-semibold text-white mb-2">Bridge Complete</h3>
-            <p className="text-sm text-gray-400">Funds delivered. You can now deposit to any proxy account.</p>
-          </div>
-          <button onClick={() => { setBridgePhase('idle'); setBridgeError(null); setBridgeAmount(''); }}
-            className="px-6 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/8 transition-all">
-            Bridge More
-          </button>
-        </div>
-
-      ) : (
-        <div className="space-y-3">
-          <p className="text-xs text-gray-500 text-center mb-4">Cross-chain transfer in progress · Do not close</p>
-          {[
-            { id: 'switching', label: 'Switch Network', desc: 'Connecting to Horizen Mainnet' },
-            { id: 'approving', label: 'Approve Token Spend', desc: 'Sign approval in wallet' },
-            { id: 'bridging', label: 'Submit Bridge', desc: 'Confirm in wallet' },
-            { id: 'waiting', label: 'Waiting for Delivery', desc: '~2–5 min' },
-          ].map((step, i) => {
-            const phases = ['switching', 'approving', 'bridging', 'waiting', 'done'];
-            const isDone = phases.indexOf(bridgePhase) > phases.indexOf(step.id);
-            const isCurrent = bridgePhase === step.id;
-            return (
-              <div key={step.id} className={`flex items-center gap-4 p-3.5 rounded-2xl border transition-all ${isCurrent ? 'bg-purple-500/8 border-purple-500/25' : isDone ? 'bg-emerald-500/5 border-emerald-500/15' : 'opacity-30 border-transparent'}`}>
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 border-2 ${isDone ? 'bg-emerald-500 border-emerald-500' : isCurrent ? 'border-purple-500 text-purple-400' : 'border-white/10 text-white/20'}`}>
-                  {isDone ? <Check size={14} className="text-white" /> : isCurrent ? <Loader2 size={14} className="animate-spin" /> : <span className="text-[10px] font-bold">{i + 1}</span>}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-semibold ${isCurrent ? 'text-white' : isDone ? 'text-emerald-400' : 'text-white/20'}`}>{step.label}</p>
-                  <p className="text-[10px] text-gray-600 mt-0.5">{step.desc}</p>
-                </div>
+            {sourceChainName === chain.id && (
+              <div className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center shadow-[0_0_10px_rgba(168,85,247,0.4)]">
+                <Check size={12} className="text-white font-bold" />
               </div>
-            );
-          })}
-        </div>
-      )}
-    </motion.div>
+            )}
+          </motion.div>
+        ))}
+      </div>
+    </div>
   );
 
   // ── TEE WITHDRAW CONTENT ────────────────────────────────
@@ -1043,7 +1174,13 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         </motion.button>
       </div>
 
-      <div className="space-y-2 overflow-y-auto max-h-[420px] pr-1 custom-scrollbar">
+      <div
+        className="space-y-2 overflow-y-auto max-h-[420px] pr-1 custom-scrollbar"
+        onScroll={(e) => {
+          const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
+          if (scrollHeight - scrollTop <= clientHeight + 50) loadMoreProxies();
+        }}
+      >
         {loading ? (
           Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-16 rounded-2xl shimmer" />)
         ) : proxies.length === 0 ? (
@@ -1107,6 +1244,11 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             );
           })
         )}
+        {loadingMore && (
+          <div className="flex justify-center p-2">
+            <Loader2 className="animate-spin text-purple-500 opacity-50" size={16} />
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -1139,14 +1281,14 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                 </motion.button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${selectedProxy.connected ? 'bg-emerald-400' : 'bg-white/20'}`} />
-                    <p className="text-xs font-semibold text-white truncate">{selectedProxy.address.slice(0, 10)}…{selectedProxy.address.slice(-6)}</p>
+                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${selectedProxy?.connected ? 'bg-emerald-400' : 'bg-white/20'}`} />
+                    <p className="text-xs font-semibold text-white truncate">{selectedProxy?.address.slice(0, 10)}…{selectedProxy?.address.slice(-6)}</p>
                   </div>
-                  <p className="text-[10px] text-gray-600 mt-0.5">{selectedProxy.connected ? 'Session Active' : 'Proxy Account'}</p>
+                  <p className="text-[10px] text-gray-600 mt-0.5">{selectedProxy?.connected ? 'Session Active' : 'Proxy Account'}</p>
                 </div>
-                {Number(selectedProxy.balance) > 0 && (
+                {Number(selectedProxy?.balance) > 0 && (
                   <div className="flex-shrink-0 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/25">
-                    <span className="text-xs font-semibold text-purple-300">${Number(selectedProxy.balance).toFixed(2)}</span>
+                    <span className="text-xs font-semibold text-purple-300">${Number(selectedProxy?.balance).toFixed(2)}</span>
                   </div>
                 )}
               </div>
@@ -1205,6 +1347,19 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           </AnimatePresence>
         </div>
 
+        {/* Mobile Chain Selector sheet */}
+        <AnimatePresence>
+          {showChainSelector && activeTab === 'BRIDGE' && (
+            <motion.div key="mobile-chain-selector"
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 32 }}
+              className="fixed inset-0 z-[90] flex flex-col px-4 pt-4 pb-12"
+              style={{ paddingTop: 'env(safe-area-inset-top, 56px)', background: 'rgba(12,8,22,0.98)', backdropFilter: 'blur(10px)' }}>
+              <ChainSelectorContent />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Mobile bottom tab bar */}
         <div className="fixed bottom-0 left-0 right-0 z-[80] glass border-t border-white/8"
           style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
@@ -1216,7 +1371,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             ] as { id: MainTab; icon: React.ReactNode; label: string }[]).map(tab => (
               <button key={tab.id}
                 id={tab.id === 'PA' ? 'tut-tab-pa' : tab.id === 'WITHDRAW_TEE' ? 'tut-tab-tee-withdraw' : undefined}
-                onClick={() => { if (tab.id === 'PA') { setActiveTab('PA'); handleSwitchToPA(); } else if (tab.id === "WITHDRAW_TEE") { setActiveTab(tab.id); handleSwitchToWithdrawTee(); } else setActiveTab(tab.id); setMobileShowTerminal(false); }}
+                onClick={() => { if (tab.id === 'PA') { setActiveTab('PA'); handleSwitchToPA(); } else if (tab.id === "WITHDRAW_TEE") { setActiveTab(tab.id); handleSwitchToWithdrawTee(); } else setActiveTab(tab.id); setMobileShowTerminal(false); setShowChainSelector(false); }}
                 className={`flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-all ${activeTab === tab.id && !mobileShowTerminal ? 'text-purple-400' : 'text-gray-600'}`}>
                 <span className={`transition-transform ${activeTab === tab.id && !mobileShowTerminal ? 'scale-110' : 'scale-100'}`}>{tab.icon}</span>
                 {tab.label}
@@ -1234,18 +1389,18 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         <div className="flex gap-3 items-start">
           {/* Side icon bar */}
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="flex flex-col gap-2 pt-1">
-            <SideTab active={activeTab === 'BRIDGE'} onClick={() => { setActiveTab('BRIDGE'); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 340); }} icon={<ArrowRightLeft size={18} />} title="Bridge" />
-            <SideTab id="tut-tab-tee-withdraw" active={activeTab === 'WITHDRAW_TEE'} onClick={() => { setActiveTab('WITHDRAW_TEE'); handleSwitchToWithdrawTee(); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 340); }} icon={<ArrowUpRight size={18} />} title="Withdraw TEE" />
-            <SideTab id="tut-tab-pa" active={activeTab === 'PA'} onClick={() => { setActiveTab('PA'); handleSwitchToPA(); }} icon={<Layers size={18} />} title="Accounts" />
+            <SideTab active={activeTab === 'BRIDGE'} onClick={() => { setActiveTab('BRIDGE'); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 340); setShowChainSelector(false); }} icon={<ArrowRightLeft size={18} />} title="Bridge" />
+            <SideTab id="tut-tab-tee-withdraw" active={activeTab === 'WITHDRAW_TEE'} onClick={() => { setActiveTab('WITHDRAW_TEE'); handleSwitchToWithdrawTee(); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 340); setShowChainSelector(false); }} icon={<ArrowUpRight size={18} />} title="Withdraw TEE" />
+            <SideTab id="tut-tab-pa" active={activeTab === 'PA'} onClick={() => { setActiveTab('PA'); handleSwitchToPA(); setShowChainSelector(false); }} icon={<Layers size={18} />} title="Accounts" />
           </motion.div>
 
-          {/* Main widget — width driven by terminalVisible to avoid glitch on close */}
+          {/* Main widget — width driven by terminalVisible/chain selector to avoid glitch on close */}
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
             className="glass-card rounded-3xl flex"
             style={{
-              width: selectedProxy ? 820 : 440,
+              width: ((selectedProxy && activeTab === 'PA') || (showChainSelector && activeTab === 'BRIDGE')) ? 820 : 440,
               minHeight: 520,
               overflow: 'clip',
               transition: 'width 0.32s cubic-bezier(0.25,0.1,0.25,1)',
@@ -1268,64 +1423,70 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               </AnimatePresence>
             </div>
 
-            {/* Terminal pane — selectedProxy stays mounted during close animation via terminalVisible flag */}
+            {/* Terminal pane / Chain Selector */}
             <AnimatePresence mode="sync">
-              {selectedProxy && (
+              {((selectedProxy && activeTab === 'PA') || (showChainSelector && activeTab === 'BRIDGE')) && (
                 <motion.div
-                  key={selectedProxy.address}
+                  key={activeTab === 'PA' ? selectedProxy?.address : 'chain-selector'}
                   initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
                   transition={{ duration: 0.28, ease: [0.25, 0.1, 0.25, 1] }}
                   className="border-l border-white/5 flex flex-col p-6 relative overflow-hidden flex-shrink-0"
                   style={{ width: 360, background: 'rgba(15,10,28,0.7)' }}>
 
-                  {/* Terminal header */}
-                  <div className="flex items-center justify-between mb-5 flex-shrink-0">
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <div className={`w-1.5 h-1.5 rounded-full ${selectedProxy.connected ? 'bg-emerald-400 animate-pulse' : 'bg-white/15'}`} />
-                        <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-widest">{selectedProxy.connected ? 'Session Active' : 'Terminal'}</p>
+                  {activeTab === 'PA' && selectedProxy ? (
+                    <>
+                      {/* Terminal header */}
+                      <div className="flex items-center justify-between mb-5 flex-shrink-0">
+                        <div>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <div className={`w-1.5 h-1.5 rounded-full ${selectedProxy?.connected ? 'bg-emerald-400 animate-pulse' : 'bg-white/15'}`} />
+                            <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-widest">{selectedProxy?.connected ? 'Session Active' : 'Terminal'}</p>
+                          </div>
+                          <p className="font-mono text-[9px] text-gray-600 truncate w-[190px]">{selectedProxy?.address}</p>
+                        </div>
+                        <motion.button onClick={closeTerminal}
+                          className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-500 hover:text-white transition-all"
+                          whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                          <X size={13} />
+                        </motion.button>
                       </div>
-                      <p className="font-mono text-[9px] text-gray-600 truncate w-[190px]">{selectedProxy.address}</p>
-                    </div>
-                    <motion.button onClick={closeTerminal}
-                      className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-500 hover:text-white transition-all"
-                      whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                      <X size={13} />
-                    </motion.button>
-                  </div>
 
-                  <TerminalContent />
+                      <TerminalContent />
 
-                  {/* TX Status overlay */}
-                  <AnimatePresence>
-                    {txStatus !== 'IDLE' && view !== 'SIGNING_REQUIRED' && view !== 'CONNECT_STATUS' && (
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 text-center"
-                        style={{ background: 'rgba(15,10,28,0.96)', backdropFilter: 'blur(8px)' }}>
-                        {txStatus === 'PROCESSING' ? (
-                          <div className="space-y-3">
-                            <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto">
-                              <Loader2 className="text-purple-400 animate-spin" size={22} />
-                            </div>
-                            <p className="text-sm text-gray-300">Processing…</p>
-                          </div>
-                        ) : txStatus === 'SUCCESS' ? (
-                          <div className="space-y-3">
-                            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
-                              <Check className="text-emerald-400" size={22} />
-                            </div>
-                            <p className="text-sm text-gray-300 font-medium">Success</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <AlertCircle className="text-red-400 mx-auto" size={28} />
-                            <p className="text-xs text-red-400">{error}</p>
-                            <button onClick={() => { setTxStatus('IDLE'); setView('ACTIONS'); }} className="text-xs text-gray-500 hover:text-gray-300 mt-2 transition-colors">Dismiss</button>
-                          </div>
+                      {/* TX Status overlay */}
+                      <AnimatePresence>
+                        {txStatus !== 'IDLE' && view !== 'SIGNING_REQUIRED' && view !== 'CONNECT_STATUS' && (
+                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 text-center"
+                            style={{ background: 'rgba(15,10,28,0.96)', backdropFilter: 'blur(8px)' }}>
+                            {txStatus === 'PROCESSING' ? (
+                              <div className="space-y-3">
+                                <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto">
+                                  <Loader2 className="text-purple-400 animate-spin" size={22} />
+                                </div>
+                                <p className="text-sm text-gray-300">Processing…</p>
+                              </div>
+                            ) : txStatus === 'SUCCESS' ? (
+                              <div className="space-y-3">
+                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
+                                  <Check className="text-emerald-400" size={22} />
+                                </div>
+                                <p className="text-sm text-gray-300 font-medium">Success</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                <AlertCircle className="text-red-400 mx-auto" size={28} />
+                                <p className="text-xs text-red-400">{error}</p>
+                                <button onClick={() => { setTxStatus('IDLE'); setView('ACTIONS'); }} className="text-xs text-gray-500 hover:text-gray-300 mt-2 transition-colors">Dismiss</button>
+                              </div>
+                            )}
+                          </motion.div>
                         )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                      </AnimatePresence>
+                    </>
+                  ) : (
+                    <ChainSelectorContent />
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1432,15 +1593,23 @@ interface TutorialStepDef {
 
 const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
-    title: 'Step 1 — Bridge Funds',
+    title: 'Step 1 — Select Network',
+    icon: '🌐',
+    desc: 'Welcome to Nyra! First, select the network you want to fund from. Click the "From" section to pick your preferred chain.',
+    targetId: 'tut-bridge-network',
+    tooltipSide: 'left',
+    autoAdvance: true,
+  },
+  {
+    title: 'Step 2 — Bridge Funds',
     icon: '🌉',
-    desc: 'You first need to move USDC from Horizen Mainnet into Nyra\'s secure environment on Arbitrum. Go ahead and enter an amount.',
+    desc: 'You first need to move USDC from your selected chain into Nyra\'s secure environment on Arbitrum. Go ahead and enter an amount.',
     targetId: 'tut-bridge-amount',
     tooltipSide: 'left',
     autoAdvance: true,
   },
   {
-    title: 'Step 2 — Execute Transfer',
+    title: 'Step 3 — Execute Transfer',
     icon: '💵',
     desc: 'Click "Bridge Liquidity". Your wallet will ask you to approve and confirm. The secure transfer takes ~2–5 minutes.',
     targetId: 'tut-bridge-btn',
@@ -1448,7 +1617,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 3 — Open Proxy Accounts',
+    title: 'Step 4 — Open Proxy Accounts',
     icon: '🗂️',
     desc: 'With your server funded, let\'s explore your stealth proxies. Click the Accounts tab.',
     targetId: 'tut-tab-pa',
@@ -1456,7 +1625,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 4 — Select or Create Proxy',
+    title: 'Step 5 — Select or Create Proxy',
     icon: '👆',
     desc: 'Click on any proxy address in the list to manage it, or use the + button to spawn a new one.',
     targetId: ['tut-proxy-item', 'tut-proxy-create'],
@@ -1464,7 +1633,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 5 — Connect to Exchange',
+    title: 'Step 6 — Connect to Exchange',
     icon: '🔗',
     desc: 'To trade on Hyperliquid, open app.hyperliquid.xyz, go to Connect Wallet → WalletConnect, and copy the URI. Paste it here.',
     targetId: 'tut-wc-input',
@@ -1472,7 +1641,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 6 — Establish Session',
+    title: 'Step 7 — Establish Session',
     icon: '🤝',
     desc: 'Click Connect. Hyperliquid might ask you to accept its Terms or Establish a Connection. Click those buttons in their interface, then come back here.',
     targetId: 'tut-connect-btn',
@@ -1480,7 +1649,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 7 — Fund Strategy',
+    title: 'Step 8 — Fund Strategy',
     icon: '🏦',
     desc: 'Now that the session is bound, let\'s send funds from your stealth server to this specific proxy\'s Hyperliquid account.',
     targetId: 'tut-deposit-btn',
@@ -1488,7 +1657,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 8 — Enter Deposit Amount',
+    title: 'Step 9 — Enter Deposit Amount',
     icon: '⬇️',
     desc: 'Enter the amount of USDC you want to deposit into your proxy account.',
     targetId: 'tut-deposit-amount',
@@ -1496,7 +1665,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 9 — Confirm Deposit',
+    title: 'Step 10 — Confirm Deposit',
     icon: '✅',
     desc: 'Click Deposit Now to execute the transaction.',
     targetId: 'tut-deposit-btn-exec',
@@ -1504,14 +1673,14 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 10 — Trade Confidentially',
+    title: 'Step 11 — Trade Confidentially',
     icon: '⚡',
     desc: 'Click below to open the Hyperliquid terminal. You are now trading entirely anonymously.',
     targetId: 'tut-start-trading',
     tooltipSide: 'top',
   },
   {
-    title: 'Step 11 — Extract Profits',
+    title: 'Step 12 — Extract Profits',
     icon: '⬆️',
     desc: 'When you are done trading, click Withdraw to extract your funds back to the proxy.',
     targetId: 'tut-withdraw-btn',
@@ -1519,7 +1688,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 12 — Destination Wallet',
+    title: 'Step 13 — Destination Wallet',
     icon: '📍',
     desc: 'Paste a fresh destination EOA address where you want to receive your funds.',
     targetId: 'tut-withdraw-address',
@@ -1527,7 +1696,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 13 — Withdrawal Amount',
+    title: 'Step 14 — Withdrawal Amount',
     icon: '💰',
     desc: 'Enter the amount you would like to withdraw from Hyperliquid.',
     targetId: 'tut-withdraw-amount-proxy',
@@ -1535,7 +1704,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 14 — Confirm Withdrawal',
+    title: 'Step 15 — Confirm Withdrawal',
     icon: '✅',
     desc: 'Click Withdraw to bring the funds back from the exchange.',
     targetId: 'tut-withdraw-submit-proxy',
@@ -1543,7 +1712,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 15 — Move off Server',
+    title: 'Step 16 — Move off Server',
     icon: '☁️',
     desc: 'Finally, use the Withdraw TEE tab to move the funds out of the enclave completely.',
     targetId: 'tut-tab-tee-withdraw',
@@ -1551,7 +1720,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 16 — Enter TEE Amount',
+    title: 'Step 17 — Enter TEE Amount',
     icon: '💵',
     desc: 'Decide how much of your secure server balance you want to withdraw back to Arbitrum.',
     targetId: 'tut-tee-withdraw-amount',
@@ -1559,7 +1728,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
     autoAdvance: true,
   },
   {
-    title: 'Step 17 — Withdraw to Main',
+    title: 'Step 18 — Withdraw to Main',
     icon: '🏦',
     desc: 'Click Withdraw to Arbitrum. Your completely private trading lifecycle is now complete!',
     targetId: 'tut-tee-withdraw-btn-exec',

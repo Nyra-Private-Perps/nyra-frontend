@@ -110,16 +110,24 @@ export interface StealthAddressEntry { address: string; createdAt: number; }
 export interface StealthAddressesResponse { success: boolean; recipientAddress: string; stealthAddresses: StealthAddressEntry[]; count: number; }
 export interface DepositResponse { success: boolean; txHash: string; }
 export interface BalanceResponse { success: boolean; userAddress: string; stealthAddress: string; deposited: string; credited: string; available: string; }
-export interface BridgeQuoteResponse { success: boolean; amount: string; minReceived: string; nativeFee: string; lzTokenFee: string; }
-export interface BridgeActionResponse { success: boolean; txHash: string; dstTxHash: string; lzStatus: string; deposited: string; }
+export interface BridgeQuoteResponse { success: boolean; sourceChain: string; amount: string; minReceived: string; nativeFee: string; lzTokenFee: string; }
+export interface SupportedChainsResponse {
+  success: boolean;
+  chains: Array<{ name: string; chainId: number; lzEid: number; stargatePool: string; token: string; tokenSymbol: string; decimals: number; }>;
+  destination: string;
+}
+export interface DirectDepositResponse { success: boolean; txHash: string; deposited: string; }
+export interface BridgeActionResponse { success: boolean; sourceChain: string; txHash: string; dstTxHash: string; lzStatus: string; deposited: string; }
 export interface BridgeStatusResponse { success: boolean; txHash: string; dstTxHash: string; status: "PENDING" | "INFLIGHT" | "DELIVERED" | "FAILED"; }
 export interface WithdrawResponse { success: boolean; txHash?: string; }
+export interface MetricsResponse { totalEOAs: number; totalStealthAddresses: number; }
 
 // ─────────────────────────────────────────────────────────────
 // HYPERSTEALTH BACKEND API METHODS
 // ─────────────────────────────────────────────────────────────
 
 export const apiHealth = () => get<HealthResponse>("/health");
+export const apiGetMetrics = () => get<MetricsResponse>("/metrics");
 
 /** POST /register */
 export async function apiRegister(eoaAddress: string, signer: SignTypedDataFn): Promise<RegisterResponse> {
@@ -156,25 +164,54 @@ export async function apiDeriveKey(eoaAddress: string, stealthAddress: string, s
 }
 
 /** POST /stealth-addresses */
-export async function apiStealthAddresses(eoaAddress: string, signer: SignTypedDataFn): Promise<StealthAddressesResponse> {
+export async function apiStealthAddresses(
+  eoaAddress: string, 
+  signer: SignTypedDataFn,
+  page: number = 1,
+  pageSize: number = 20
+): Promise<StealthAddressesResponse> {
   const signature = await signWithWagmi(
     signer,
     { Register: [{ name: "signer", type: "address" }] },
     "Register",
     { signer: getAddress(eoaAddress) }
   );
-  return post<StealthAddressesResponse>("/stealth-addresses", { recipientAddress: getAddress(eoaAddress), signature });
+  return post<StealthAddressesResponse>("/stealth-addresses", { 
+    recipientAddress: getAddress(eoaAddress), 
+    signature,
+    page,
+    pageSize
+  });
 }
 
-/** Bridge USDC.e from Horizen to Arbitrum */
-export async function apiBridge(eoaAddress: string, amount: string, signer: SignTypedDataFn): Promise<BridgeActionResponse> {
+/** Bridge USDC.e from arbitrary chain to Arbitrum */
+export async function apiBridge(eoaAddress: string, amount: string, signer: SignTypedDataFn, sourceChain: string = "horizen"): Promise<BridgeActionResponse> {
   const signature = await signWithWagmi(
     signer,
     { Bridge: [{ name: "recipientAddress", type: "address" }, { name: "amount", type: "uint256" }] }, 
     "Bridge", 
     { recipientAddress: getAddress(eoaAddress), amount: BigInt(amount) }
   );
-  return post<BridgeActionResponse>("/bridge", { recipientAddress: getAddress(eoaAddress), amount, signature });
+  return post<BridgeActionResponse>("/bridge", { recipientAddress: getAddress(eoaAddress), amount, sourceChain, signature });
+}
+
+/** Direct Deposit USDC from Arbitrum without Bridging */
+export async function apiDirectDeposit(
+  depositorAddress: string, 
+  amount: string, 
+  signer: SignTypedDataFn
+): Promise<DirectDepositResponse> {
+  const signature = await signWithWagmi(
+    signer,
+    { DirectDeposit: [{ name: "depositor", type: "address" }, { name: "amount", type: "uint256" }] },
+    "DirectDeposit",
+    { depositor: getAddress(depositorAddress), amount: BigInt(amount) }
+  );
+  return post<DirectDepositResponse>("/direct-deposit", { 
+    depositorAddress: getAddress(depositorAddress), 
+    amount,
+    signature 
+  });
 }
 
 /** POST /deposit */
@@ -265,7 +302,8 @@ export async function apiWithdraw(
 // REMAINING UTILS (Unchanged)
 // ─────────────────────────────────────────────────────────────
 export const apiGetBalance = (address: string) => get<BalanceResponse>(`/balance/${getAddress(address)}`);
-export const apiQuoteBridge = (amount: string) => post<BridgeQuoteResponse>("/quote-bridge", { amount });
+export const apiGetSupportedChains = () => get<SupportedChainsResponse>("/supported-chains");
+export const apiQuoteBridge = (amount: string, sourceChain: string = "horizen") => post<BridgeQuoteResponse>("/quote-bridge", { amount, sourceChain });
 export const apiGetBridgeStatus = (txHash: string) => get<BridgeStatusResponse>(`/bridge-status/${txHash}`);
 
 export const getHLMeta = () => fetchHL("meta");

@@ -231,7 +231,6 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
         >
           {/* Network badge — desktop only */}
           <motion.button
-            onClick={() => switchChain({ chainId: ARBITRUM_ID })}
             className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 ${isWrongNetwork
               ? 'bg-red-500/10 border-red-500/25 text-red-400'
               : isHorizen
@@ -302,7 +301,6 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
           >
             {/* Network on mobile */}
             <button
-              onClick={() => switchChain({ chainId: ARBITRUM_ID })}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${isWrongNetwork
                 ? 'bg-red-500/10 border-red-500/25 text-red-400'
                 : 'bg-white/3 border-white/8 text-gray-400'
