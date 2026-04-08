@@ -89,7 +89,6 @@ function AmountField({
           inputMode="decimal"
           value={value}
           onChange={e => {
-            // Only allow valid numeric input
             const v = e.target.value;
             if (v === '' || /^\d*\.?\d*$/.test(v)) onChange(v);
           }}
@@ -99,20 +98,18 @@ function AmountField({
         />
         {suffix && <span className="text-xs text-gray-600 font-medium flex-shrink-0">{suffix}</span>}
       </div>
-      {/* Static error — no AnimatePresence to avoid layout glitch */}
       {error && (
         <div className="flex items-center gap-1.5 text-red-400 min-h-[18px]">
           <AlertCircle size={11} className="flex-shrink-0" />
           <p className="text-[11px] font-medium">{error}</p>
         </div>
       )}
-      {/* Reserve space when no error to prevent layout shift */}
       {!error && <div className="min-h-[18px]" />}
     </div>
   );
 }
 
-/* ─── WC URI input — styled to match theme ──────────────── */
+/* ─── WC URI input ──────────────────────────────────── */
 function WcInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
     <div className="relative">
@@ -140,12 +137,11 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
   const [activeTab, setActiveTab] = useState<MainTab>('BRIDGE');
   const [selectedProxy, setSelectedProxy] = useState<Proxy | null>(null);
-  // Track whether terminal pane is visually open (delayed close for animation)
   const [terminalVisible, setTerminalVisible] = useState(false);
   const [proxies, setProxies] = useState<Proxy[]>([]);
   const [loading, setLoading] = useState(true);
-  const [serverBalance, setServerBalance] = useState('0'); // available (deposited - credited)
-  const [withdrawProxy, setWithdrawProxy] = useState(0); // total bridged into TEE
+  const [serverBalance, setServerBalance] = useState('0');
+  const [withdrawProxy, setWithdrawProxy] = useState(0);
   const [txStatus, setTxStatus] = useState<TxStatus>('IDLE');
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -155,7 +151,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [teeTxProgress, setTeeTxProgress] = useState(0);
   const [showTeeTxOverlay, setShowTeeTxOverlay] = useState(false);
 
-  // Separate amount state for each context to avoid cross-contamination
   const [bridgeAmount, setBridgeAmount] = useState('');
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -168,15 +163,18 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [txStep, setTxStep] = useState<TxStep>('signing');
   const [progress, setProgress] = useState(0);
 
-  // Pagination & Multi-chain
   const [supportedChains, setSupportedChains] = useState<any[]>([]);
   const [sourceChainName, setSourceChainName] = useState<string>("");
   const [showChainSelector, setShowChainSelector] = useState(false);
 
-  // Pagination bounds
+  // ── FIX 1: Pagination state — use refs as source-of-truth to avoid stale closures ──
   const [proxyPage, setProxyPage] = useState(1);
   const [hasMoreProxies, setHasMoreProxies] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const proxyPageRef = useRef(1);
+  const hasMoreProxiesRef = useRef(true);
+  const loadingMoreRef = useRef(false);
+
   const [connectStep, setConnectStep] = useState<ConnectStep>('idle');
   const [pendingReq, setPendingReq] = useState<PendingRequest | null>(null);
   const [hlConnected, setHlConnected] = useState(false);
@@ -186,27 +184,34 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const [bridgeError, setBridgeError] = useState<string | null>(null);
   const [mobileShowTerminal, setMobileShowTerminal] = useState(false);
 
-  // Tutorial state
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [showHelpModal, setShowHelpModal] = useState(false);
 
   const signingHandledRef = useRef(false);
   const signingActiveRef = useRef(false);
   const selectedProxyRef = useRef<Proxy | null>(null);
-  // Guard against concurrent loadData invocations (prevents the multiple-reload glitch)
-  const loadingInFlightRef = useRef(false);
 
-  // Dynamic tutorial steps: insert "Connect Wallet" step at index 1 when disconnected
+  // ── FIX 2: Single in-flight guard ref — never block pagination by keeping it true ──
+  const loadingInFlightRef = useRef(false);
+  // ── FIX 3: Track whether proxies have been fetched for this wallet session ──
+  const hasLoadedProxiesRef = useRef(false);
+
+  // ── FIX 4: Stable ref for signTypedDataAsync to avoid stale closures in callbacks ──
+  const signTypedDataAsyncRef = useRef(signTypedDataAsync);
+  useEffect(() => { signTypedDataAsyncRef.current = signTypedDataAsync; }, [signTypedDataAsync]);
+
+  const addressRef = useRef(address);
+  useEffect(() => { addressRef.current = address; }, [address]);
+
+  const supportedChainsRef = useRef(supportedChains);
+  useEffect(() => { supportedChainsRef.current = supportedChains; }, [supportedChains]);
+
   const effectiveSteps = useMemo(
     () => TUTORIAL_STEPS.filter(s => !s.onlyWhenDisconnected || !address),
     [address]
   );
 
-  // When wallet connects, the connect-wallet step disappears from effectiveSteps.
-  // tutorialStep index stays the same — it now points to "Bridge Funds" automatically.
-  // The TutorialTooltip useEffect will re-fire because effectiveSteps is now in its deps.
-  // Nothing extra needed here, but keep this for clarity.
-  useEffect(() => { /* effectiveSteps handled reactively via useMemo + TutorialTooltip deps */ }, [address]);
+  useEffect(() => { /* effectiveSteps handled reactively */ }, [address]);
 
   const HORIZEN_USDC_ADDRESS = (import.meta as any).env?.VITE_HORIZEN_USDC_ADDRESS;
   const CENTRAL_WALLET = (import.meta as any).env?.VITE_CENTRAL_WALLET;
@@ -217,25 +222,30 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     { id: 'finalizing', label: 'Finalizing', desc: 'Confirming settlement' },
   ];
 
-  // Horizen wallet balance
   const { data: walletBal } = useBalance({
     address,
     token: HORIZEN_USDC_ADDRESS as `0x${string}`,
     chainId: HORIZEN_ID,
   });
 
-  // Chain guard — always enforce Arbitrum unless bridging
+  const ARBITRUM_USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';
+  const { data: arbWalletBal } = useBalance({
+    address,
+    token: ARBITRUM_USDC as `0x${string}`,
+    chainId: ARBITRUM_ID,
+  });
+
   const isOnArbitrum = chain?.id === ARBITRUM_ID;
   const isOnHorizen = chain?.id === HORIZEN_ID;
   const wrongChain = !isOnArbitrum && !isOnHorizen;
 
-  // Derived max values
   const depositMax = Number(serverBalance) / 1e6;
-  // const withdrawMax = Number(withdrawProxy) / 1e6;
-  const bridgeMax = Number(walletBal?.formatted ?? 0);
+  const isDirect = sourceChainName === 'arbitrum' || isOnArbitrum;
+  const bridgeMax = isDirect
+    ? Number(arbWalletBal?.formatted ?? 0)
+    : Number(walletBal?.formatted ?? 0);
   const teeMax = Number(serverBalance) / 1e6;
 
-  // Per-field error calculation (no useEffect — computed inline, stable)
   const getBridgeError = useCallback(() => {
     const v = parseFloat(bridgeAmount);
     if (!bridgeAmount || isNaN(v)) return null;
@@ -270,20 +280,36 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     return null;
   }, [teeAmount, teeMax]);
 
-  // Data loading
+  // ── FIX 5: loadData — pure async function, NO useCallback (avoids stale closure issues)
+  // Uses refs for all mutable values it reads so it's always fresh.
   const loadData = async (page = 1, append = false) => {
-    // Prevent concurrent calls — only one loadData can run at a time
     if (loadingInFlightRef.current) return;
     loadingInFlightRef.current = true;
 
-    const eoa = getStoredEOA() || address;
-    if (!eoa || !signTypedDataAsync) { setLoading(false); loadingInFlightRef.current = false; return; }
-    if (page > 1) setLoadingMore(true); else setLoading(true);
+    const eoa = getStoredEOA() || addressRef.current;
+    const sign = signTypedDataAsyncRef.current;
+    if (!eoa || !sign) {
+      setLoading(false);
+      loadingInFlightRef.current = false;
+      return;
+    }
+
+    if (page > 1) {
+      setLoadingMore(true);
+      loadingMoreRef.current = true;
+    } else {
+      setLoading(true);
+    }
+
     try {
-      const res = await apiStealthAddresses(eoa, signTypedDataAsync, page, 20);
-      // Correct sequential numbering across pages (page 2 starts at 21, not 1)
+      const [res, bal, chainsConfig] = await Promise.all([
+        apiStealthAddresses(eoa, sign, page, 20),
+        apiGetBalance(eoa).catch(() => null),
+        supportedChainsRef.current.length === 0 ? apiGetSupportedChains().catch(() => null) : Promise.resolve(null),
+      ]);
+
       const offset = (page - 1) * 20;
-      const list = res.stealthAddresses.map((s: any, i: number) => ({
+      const list: Proxy[] = res.stealthAddresses.map((s: any, i: number) => ({
         num: offset + i + 1,
         address: s.address,
         connected: false,
@@ -292,55 +318,66 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         hlBalance: 0,
       }));
 
-      // Use total from API to correctly detect if more pages exist
       const loadedSoFar = append ? offset + list.length : list.length;
-      setHasMoreProxies(loadedSoFar < (res.total ?? 0));
+      const newHasMore = loadedSoFar < (res.total ?? 0);
+
+      setHasMoreProxies(newHasMore);
+      hasMoreProxiesRef.current = newHasMore;
 
       if (!append) {
-        // Fresh load — reset page counter to 1
-        setProxyPage(1);
         setProxies(list);
       } else {
-        setProxies(prev => [...prev, ...list]);
+        setProxies(prev => {
+          // De-duplicate by address in case of race conditions
+          const existingAddrs = new Set(prev.map(p => p.address));
+          const fresh = list.filter(p => !existingAddrs.has(p.address));
+          return [...prev, ...fresh];
+        });
       }
 
-      // Fetch server balance (TEE wallet) — lightweight, needed for withdraw tab
-      try {
-        const bal = await apiGetBalance(eoa);
-        setServerBalance(bal.available);
-      } catch { }
+      if (bal) setServerBalance(bal.available);
+      if (chainsConfig) setSupportedChains(chainsConfig.chains || []);
 
-      // Load supported chains config once
-      if (!supportedChains.length) {
-        try {
-          const chainsConfig = await apiGetSupportedChains();
-          setSupportedChains(chainsConfig.chains || []);
-        } catch (e) { console.error('Failed to load chains', e); }
-      }
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); setLoadingMore(false); loadingInFlightRef.current = false; }
+    } catch (e) {
+      console.error('loadData error:', e);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+      loadingMoreRef.current = false;
+      loadingInFlightRef.current = false;
+    }
   };
 
-  const loadMoreProxies = () => {
-    if (loadingMore || !hasMoreProxies || loadingInFlightRef.current) return;
-    // Use functional updater so we always read the latest page value
-    setProxyPage(prev => {
-      const nextPage = prev + 1;
-      // Schedule outside the setter to avoid calling loadData inside setState
-      setTimeout(() => loadData(nextPage, true), 0);
-      return nextPage;
-    });
+  // ── FIX 6: loadMoreProxies — reads from refs, not state, so never stale ──
+  const loadMoreProxies = useCallback(() => {
+    if (loadingMoreRef.current || !hasMoreProxiesRef.current || loadingInFlightRef.current) return;
+    const nextPage = proxyPageRef.current + 1;
+    proxyPageRef.current = nextPage;
+    setProxyPage(nextPage);
+    loadData(nextPage, true);
+  }, []); // empty deps — intentional, reads refs only
+
+  // ── FIX 7: scroll handler actually calls loadMoreProxies ──
+  const handleProxyListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop <= clientHeight + 100) {
+      loadMoreProxies();
+    }
+  }, [loadMoreProxies]);
+
+  const refreshBalances = async () => {
+    const eoa = getStoredEOA() || address;
+    if (!eoa) return;
+    try {
+      const bal = await apiGetBalance(eoa);
+      if (bal) setServerBalance(bal.available);
+    } catch { }
   };
 
-  // Tutorial: show on first dashboard visit (temporarily forced for testing)
   useEffect(() => {
-    // const done = localStorage.getItem('nyra_tutorial_done');
-    // if (!done) {
     setTimeout(() => setTutorialStep(0), 600);
-    // }
   }, []);
 
-  // Tutorial auto-advance logic mapped to exact 17-step sequence
   useEffect(() => {
     if (tutorialStep === null) return;
     if (tutorialStep === 0 && sourceChainName !== '') setTutorialStep(1);
@@ -357,8 +394,14 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     if (tutorialStep === 16 && Number(teeAmount) > 0) setTutorialStep(17);
   }, [tutorialStep, activeTab, selectedProxy, wcUri, view, bridgeAmount, depositAmount, destination, withdrawAmount, teeAmount, sourceChainName]);
 
+  // ── FIX 8: address change effect — reset proxy state cleanly without triggering loadData ──
   useEffect(() => {
-    // Reset all proxy/pagination state when wallet changes
+    loadingInFlightRef.current = false;
+    hasLoadedProxiesRef.current = false;
+    proxyPageRef.current = 1;
+    hasMoreProxiesRef.current = true;
+    loadingMoreRef.current = false;
+
     setProxies([]);
     setLoading(false);
     setSelectedProxy(null);
@@ -366,15 +409,15 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     setMobileShowTerminal(false);
     setProxyPage(1);
     setHasMoreProxies(true);
-    loadingInFlightRef.current = false; // release any in-flight guard from previous session
-    // When user connects wallet, if they selected a source chain, try to switch to it
+
     if (address && sourceChainName) {
       const config = supportedChains.find(c => c.name === sourceChainName);
       if (config?.chainId) {
-        try { switchChain({ chainId: config.chainId }) } catch(e) {}
+        try { switchChain({ chainId: config.chainId }); } catch (e) { }
       }
     }
-  }, [address]);
+    // Do NOT call loadData here — let handleSwitchToPA trigger it on demand
+  }, [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { selectedProxyRef.current = selectedProxy; }, [selectedProxy]);
 
@@ -388,34 +431,38 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           return;
         }
         if (!selectedProxyRef.current) return;
-        signingActiveRef.current = true; signingHandledRef.current = false;
+        signingActiveRef.current = true;
+        signingHandledRef.current = false;
         flushSync(() => { setPendingReq(req); setView('SIGNING_REQUIRED'); });
       } else {
-        if (!signingHandledRef.current) { signingActiveRef.current = false; flushSync(() => { setPendingReq(null); }); }
+        if (!signingHandledRef.current) {
+          signingActiveRef.current = false;
+          flushSync(() => { setPendingReq(null); });
+        }
       }
     });
     return () => unsub();
   }, []);
 
+  // ── FIX 9: handleSwitchToPA — only loads once per wallet session ──
   const handleSwitchToPA = async () => {
     setActiveTab('PA');
-    // loadData manages its own loading state and in-flight guard — just call it directly
-    loadData(1, false);
+    if (!hasLoadedProxiesRef.current) {
+      hasLoadedProxiesRef.current = true;
+      proxyPageRef.current = 1;
+      loadData(1, false);
+    }
   };
 
   const handleSwitchToWithdrawTee = async () => {
     setActiveTab('WITHDRAW_TEE');
-    try { switchChain({ chainId: 42161 }); } catch(e) {}
-    if (loading) return;
-    setLoading(true);
+    try { switchChain({ chainId: 42161 }); } catch (e) { }
     try {
       const bal = await apiGetBalance(address!);
-      console.log(bal, "balance")
       setServerBalance(bal.available);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+    } catch (e) { console.error(e); }
   };
 
-  // Bridge — switches to selected chain, then switches BACK to Arbitrum after done
   const handleBridge = async () => {
     setBridgePhase('switching'); setBridgeError(null);
     try {
@@ -428,11 +475,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       }
 
       setBridgePhase('approving');
-      // For Horizen or Direct, the CENTRAL_WALLET is the spender. For Stargate it might be stargatePool contract.
-      // Based on docs, user approves central wallet on source chain USDC contract.
-      // E.g. HORIZEN_USDC_ADDRESS for horizen, or ARBITRUM_USDC address for direct deposit.
       const sc = supportedChains.find(c => c.name === sourceChainName);
-      const tokenAddress = isDirect ? "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" : (sc ? sc.token : HORIZEN_USDC_ADDRESS); // arbitrum native usdc
+      const tokenAddress = isDirect ? "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" : (sc ? sc.token : HORIZEN_USDC_ADDRESS);
 
       await approveToken(tokenAddress, CENTRAL_WALLET, rawAmount);
 
@@ -440,7 +484,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       if (isDirect) {
         await apiDirectDeposit(address!, rawAmount, signTypedDataAsync);
         setBridgePhase('done');
-        await loadData();
+        refreshBalances();
       } else {
         const res = await apiBridge(address!, rawAmount, signTypedDataAsync, sourceChainName);
         setBridgePhase('waiting');
@@ -453,7 +497,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         }
         await switchChainNetwork(ARBITRUM_ID);
         setBridgePhase('done');
-        await loadData();
+        refreshBalances();
       }
     } catch (e: any) { setBridgeError(e.message || 'Bridge failed'); setBridgePhase('error'); }
   };
@@ -477,7 +521,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         setShowTeeTxOverlay(false);
         setTeeTxProgress(0);
         setActiveTab('PA');
-        loadData();
+        refreshBalances();
       }, 2000);
     } catch (e: any) {
       setError(e.message || 'Withdrawal failed');
@@ -488,7 +532,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
   const handleConnect = async () => {
     if (!selectedProxy || !wcUri.startsWith('wc:')) { setError('Invalid WalletConnect URI'); setView('ACTIONS'); return; }
-    // Ensure on Arbitrum before connecting
     if (!isOnArbitrum) {
       try { await switchChainNetwork(ARBITRUM_ID); } catch { setError('Please switch to Arbitrum first'); return; }
     }
@@ -530,6 +573,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             });
             if (!signingActiveRef.current) {
               setHlConnected(true);
+              // ── FIX 10: Update proxy connected state WITHOUT triggering a list reload ──
               setProxies(prev => prev.map(p => p.address === selectedProxy.address ? { ...p, connected: true } : { ...p, connected: false }));
               setSelectedProxy(prev => prev ? { ...prev, connected: true } : prev);
               setWithdrawMax(selectedProxy?.hlBalance ?? 0);
@@ -547,6 +591,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     }
   };
 
+  // ── FIX 11: handleDepositFlow — no loadData call, only refreshBalances ──
   const handleDepositFlow = async () => {
     if (!selectedProxy || !address) return;
     setView('DEPOSIT_STEPS'); setError(null);
@@ -558,10 +603,15 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       setTxStep('finalizing'); setProgress(90);
       await new Promise(r => setTimeout(r, 1200));
       setTxStep('success'); setProgress(100);
-      setTimeout(() => { setView('ACTIONS'); loadData(); }, 2000);
+      setTimeout(() => {
+        setView('ACTIONS');
+        setDepositAmount('');
+        refreshBalances(); // Only refresh balance numbers, never reload proxy list
+      }, 2000);
     } catch (err: any) { setError(err.message || 'Deposit failed'); setTxStatus('ERROR'); }
   };
 
+  // ── FIX 12: handleWithdrawFlow — no loadData call, only refreshBalances ──
   const handleWithdrawFlow = async () => {
     if (!selectedProxy || !address || !destination) return;
     setView('WITHDRAW_STEPS'); setError(null);
@@ -573,7 +623,12 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       setTxStep('finalizing'); setProgress(90);
       await new Promise(r => setTimeout(r, 1200));
       setTxStep('success'); setProgress(100);
-      setTimeout(() => { setView('ACTIONS'); loadData(); }, 2500);
+      setTimeout(() => {
+        setView('ACTIONS');
+        setWithdrawAmount('');
+        setDestination('');
+        refreshBalances(); // Only refresh balance numbers, never reload proxy list
+      }, 2500);
     } catch (err: any) { setError(err.message || 'Withdraw failed'); setTxStatus('ERROR'); }
   };
 
@@ -585,9 +640,11 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     resolveRequest(true);
     setTimeout(() => {
       setConnectStep('idle'); setHlConnected(true);
+      // ── FIX 13: Update proxy in-place, no reload ──
       setProxies(prev => prev.map(p => p.address === selectedProxy?.address ? { ...p, connected: true } : { ...p, connected: false }));
       setSelectedProxy(prev => prev ? { ...prev, connected: true } : prev);
-      setView('ACTIONS'); loadData();
+      setView('ACTIONS');
+      refreshBalances();
     }, 2200);
   };
 
@@ -596,21 +653,48 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     resolveRequest(false); setPendingReq(null); setView('ACTIONS'); setConnectStep('idle');
   };
 
+  // ── FIX 14: openProxy — NEVER calls loadData; only updates selectedProxy state ──
   const openProxy = (p: Proxy) => {
-    setSelectedProxy(p); setView('ACTIONS'); setMobileShowTerminal(true);
+    setSelectedProxy(p);
+    setView('ACTIONS');
+    setMobileShowTerminal(true);
     setTerminalVisible(true);
     setWithdrawMax(p?.hlBalance);
-    // Pre-fill amounts to max on open
     setDepositAmount('');
     setWithdrawAmount('');
+
+    if (p.hlBalance === 0) {
+      setRefreshingBalance(p.address);
+      Promise.all([
+        getHLUserState(p.address).catch(() => null),
+        getHLSpotState(p.address).catch(() => null),
+      ]).then(([state, spotState]) => {
+        const newBalance = state?.marginSummary?.accountValue ?? '0';
+        const newPnl = state?.marginSummary?.unrealizedPnl ?? '0';
+        const spotUsdcEntry = spotState?.balances?.find((b: any) => b.coin === 'USDC');
+        const newHlBalance = spotUsdcEntry
+          ? Number(spotUsdcEntry.hold) + Number(spotUsdcEntry.total)
+          : 0;
+        const updated = {
+          ...p,
+          balance: newBalance,
+          pnl: newPnl,
+          hlBalance: newHlBalance,
+          connected: Number(newBalance) > 0 || newHlBalance > 0,
+        };
+        // Update the proxy in the list and selected state without reloading
+        setProxies(prev => prev.map(x => x.address === p.address ? updated : x));
+        setSelectedProxy(updated);
+        setWithdrawMax(updated.hlBalance);
+      }).finally(() => setRefreshingBalance(null));
+    }
   };
 
   const closeTerminal = () => {
-    // Start exit animation — keep selectedProxy mounted until animation done
     setTerminalVisible(false);
     setTimeout(() => {
       setSelectedProxy(null); setView('ACTIONS');
-    }, 340); // matches exit transition duration
+    }, 340);
     setMobileShowTerminal(false);
   };
 
@@ -619,10 +703,15 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     if (refreshingBalance === proxy.address) return;
     setRefreshingBalance(proxy.address);
     try {
-      const state = await getHLUserState(proxy.address);
+      const [state, spotState] = await Promise.all([
+        getHLUserState(proxy.address).catch(() => null),
+        getHLSpotState(proxy.address).catch(() => null),
+      ]);
       const newBalance = state?.marginSummary?.accountValue ?? '0';
       const newPnl = state?.marginSummary?.unrealizedPnl ?? '0';
-      const updated = { ...proxy, balance: newBalance, pnl: newPnl, connected: Number(newBalance) > 0 };
+      const spotUsdcEntry = spotState?.balances?.find((b: any) => b.coin === 'USDC');
+      const newHlBalance = spotUsdcEntry ? Number(spotUsdcEntry.hold) + Number(spotUsdcEntry.total) : 0;
+      const updated = { ...proxy, balance: newBalance, pnl: newPnl, hlBalance: newHlBalance, connected: Number(newBalance) > 0 || newHlBalance > 0 };
       setProxies(prev => prev.map(x => x.address === proxy.address ? updated : x));
       if (selectedProxy?.address === proxy.address) { setSelectedProxy(updated); setWithdrawMax(updated.hlBalance); }
     } catch (e) { console.error(e); }
@@ -648,7 +737,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         {/* ACTIONS */}
         {view === 'ACTIONS' && selectedProxy && (
           <motion.div key="actions" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="space-y-4">
-            {/* Dual balance card */}
             <div className="rounded-2xl border border-white/8 overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
               <div className="p-4 space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -667,7 +755,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                   </div>
                 )}
               </div>
-              {/* 3-column balance breakdown */}
               <div className="border-t border-white/5 grid grid-cols-2 divide-x divide-white/5" style={{ background: 'rgba(255,255,255,0.015)' }}>
                 {[
                   { label: 'Available to deposit', value: depositMax.toFixed(2), tip: 'Deposited to Hyperliquid', color: 'text-purple-400' },
@@ -709,8 +796,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                   <ExternalLink size={14} /> Start Trading
                 </motion.a>
                 <div className="grid grid-cols-2 gap-2">
-                  <ActionBtn id="tut-deposit-btn" icon={<ArrowDownLeft size={16} />} label="Deposit" sub="Fund account" onClick={() => { setView('DEPOSIT_INPUT'); try { switchChain({ chainId: 26514 }); } catch(e) {} }} />
-                  <ActionBtn id="tut-withdraw-btn" icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => { setView('WITHDRAW_INPUT'); try { switchChain({ chainId: 42161 }); } catch(e) {} }} />
+                  <ActionBtn id="tut-deposit-btn" icon={<ArrowDownLeft size={16} />} label="Deposit" sub="Fund account" onClick={() => { setView('DEPOSIT_INPUT'); try { switchChain({ chainId: 26514 }); } catch (e) { } }} />
+                  <ActionBtn id="tut-withdraw-btn" icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => { setView('WITHDRAW_INPUT'); try { switchChain({ chainId: 42161 }); } catch (e) { } }} />
                 </div>
                 <div className="pt-3 border-t border-white/5 space-y-2">
                   <WcInput value={wcUri} onChange={setWcUri} placeholder="wc:... (re-pair session)" />
@@ -723,8 +810,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             ) : (
               <motion.div key="disc-act" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
-                  <ActionBtn id="tut-deposit-btn" icon={<ArrowDownLeft size={16} />} label="Deposit" sub="From server" onClick={() => { setView('DEPOSIT_INPUT'); try { switchChain({ chainId: 26514 }); } catch(e) {} }} />
-                  <ActionBtn id="tut-withdraw-btn" icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => { setView('WITHDRAW_INPUT'); try { switchChain({ chainId: 42161 }); } catch(e) {} }} />
+                  <ActionBtn id="tut-deposit-btn" icon={<ArrowDownLeft size={16} />} label="Deposit" sub="From server" onClick={() => { setView('DEPOSIT_INPUT'); try { switchChain({ chainId: 26514 }); } catch (e) { } }} />
+                  <ActionBtn id="tut-withdraw-btn" icon={<ArrowUpRight size={16} />} label="Withdraw" sub="Extract funds" onClick={() => { setView('WITHDRAW_INPUT'); try { switchChain({ chainId: 42161 }); } catch (e) { } }} />
                 </div>
                 <div className="pt-3 border-t border-white/5 space-y-2">
                   <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Connect Hyperliquid</p>
@@ -919,29 +1006,28 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
         {bridgePhase === 'idle' || bridgePhase === 'error' ? (
           <div className="space-y-4">
-            {/* From */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <label className="text-xs text-gray-500">From</label>
                 <span className="text-[10px] text-purple-400 font-medium">Wallet: ${bridgeMax.toFixed(2)}</span>
               </div>
-              <div 
-              id="tut-bridge-network"
-              onClick={() => setShowChainSelector(true)}
-              className={`flex items-center gap-3 p-4 rounded-2xl border cursor-pointer transition-colors ${getBridgeError() ? 'border-red-500/40 bg-red-500/3' : 'border-white/8 bg-white/3 hover:border-purple-500/25'}`}>
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${isDirect ? 'bg-blue-600' : sourceChainName === 'horizen' ? 'bg-blue-900 border border-blue-700' : sourceChainName === '' ? 'bg-white/10' : 'bg-purple-500'}`}>
-                {isDirect ? <img src={Arbitrum} width={'30px'} height={'30px'} alt="Arbitrum Network" className="rounded-full" /> :
-                 sourceChainName === 'horizen' ? <img src={Horizen} width={'30px'} height={'30px'} alt="Horizen Network" className="rounded-full" /> : 
-                 sourceChainName === '' ? '🌐' :
-                 (activeChainConfig?.name.charAt(0).toUpperCase() || 'C')}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className={`text-sm font-medium ${sourceChainName === '' ? 'text-white/60' : 'text-white'}`}>{sourceChainName === '' ? 'Select Asset' : `USDC${isDirect ? '' : '.e'}`}</p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <p className="text-xs text-gray-400 capitalize">{sourceChainName === '' ? 'Select Chain' : isDirect ? 'Arbitrum (Direct)' : sourceChainName === 'horizen' ? 'Horizen Mainnet' : sourceChainName}</p>
-                  <ChevronDown size={12} className="text-gray-500" />
+              <div
+                id="tut-bridge-network"
+                onClick={() => setShowChainSelector(true)}
+                className={`flex items-center gap-3 p-4 rounded-2xl border cursor-pointer transition-colors ${getBridgeError() ? 'border-red-500/40 bg-red-500/3' : 'border-white/8 bg-white/3 hover:border-purple-500/25'}`}>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${isDirect ? 'bg-blue-600' : sourceChainName === 'horizen' ? 'bg-blue-900 border border-blue-700' : sourceChainName === '' ? 'bg-white/10' : 'bg-purple-500'}`}>
+                  {isDirect ? <img src={Arbitrum} width={'30px'} height={'30px'} alt="Arbitrum Network" className="rounded-full" /> :
+                    sourceChainName === 'horizen' ? <img src={Horizen} width={'30px'} height={'30px'} alt="Horizen Network" className="rounded-full" /> :
+                      sourceChainName === '' ? '🌐' :
+                        (activeChainConfig?.name.charAt(0).toUpperCase() || 'C')}
                 </div>
-              </div>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-medium ${sourceChainName === '' ? 'text-white/60' : 'text-white'}`}>{sourceChainName === '' ? 'Select Asset' : `USDC${isDirect ? '' : '.e'}`}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="text-xs text-gray-400 capitalize">{sourceChainName === '' ? 'Select Chain' : isDirect ? 'Arbitrum (Direct)' : sourceChainName === 'horizen' ? 'Horizen Mainnet' : sourceChainName}</p>
+                    <ChevronDown size={12} className="text-gray-500" />
+                  </div>
+                </div>
                 <div className="ml-auto flex flex-col items-end gap-1" onClick={e => e.stopPropagation()}>
                   <input id="tut-bridge-amount" type="text" inputMode="decimal" value={bridgeAmount}
                     onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setBridgeAmount(v); }}
@@ -963,7 +1049,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               </div>
             </div>
 
-            {/* To */}
             <div className="space-y-2">
               <label className="text-xs text-gray-500">To</label>
               <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/3 border border-white/8">
@@ -1075,10 +1160,10 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           ...supportedChains.filter(c => !['horizen', 'ethereum', 'optimism', 'base', 'polygon', 'avalanche'].includes(c.name)).map(c => ({ id: c.name, name: c.name.charAt(0).toUpperCase() + c.name.slice(1), isDirect: false, chainId: c.chainId }))
         ].map(chain => (
           <motion.div key={chain.id}
-            onClick={() => { 
-                setSourceChainName(chain.id); 
-                setShowChainSelector(false); 
-                if (chain.chainId) { try { switchChain({ chainId: chain.chainId }); } catch(e) {} }
+            onClick={() => {
+              setSourceChainName(chain.id);
+              setShowChainSelector(false);
+              if (chain.chainId) { try { switchChain({ chainId: chain.chainId }); } catch (e) { } }
             }}
             className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between group ${sourceChainName === chain.id ? 'bg-purple-500/10 border-purple-500/25' : 'bg-white/2 border-white/6 hover:border-white/12'
               }`}>
@@ -1138,7 +1223,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         </motion.button>
       )}
 
-      {/* Full-screen fixed TX steps overlay for TEE withdrawal */}
       <AnimatePresence>
         {showTeeTxOverlay && (
           <motion.div
@@ -1196,7 +1280,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           <h2 className="text-xl font-semibold text-white">Registry</h2>
           <p className="text-xs text-gray-500 mt-0.5">Your stealth proxy accounts</p>
         </div>
-        {/* Hide + button when disconnected */}
         {address && (
           <motion.button id="tut-proxy-create"
             onClick={async () => {
@@ -1214,7 +1297,14 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                 setNewestProxyAddress(stealthAddress);
                 setTimeout(() => setNewestProxyAddress(null), 30000);
               } catch (e) { console.error(e); }
-              finally { await loadData(); setCreating(false); }
+              finally {
+                // Full reload after creation since total count changed
+                hasLoadedProxiesRef.current = false;
+                proxyPageRef.current = 1;
+                await loadData(1, false);
+                hasLoadedProxiesRef.current = true;
+                setCreating(false);
+              }
             }}
             className="w-9 h-9 rounded-full bg-purple-500/10 border border-purple-500/25 flex items-center justify-center text-purple-400 hover:bg-purple-500/20 transition-all"
             whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
@@ -1223,7 +1313,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
         )}
       </div>
 
-      {/* Proxy list body */}
       {!address ? (
         <div className="flex flex-col items-center justify-center flex-1 gap-4 py-12 border border-dashed border-white/10 rounded-2xl bg-white/2">
           <Shield size={32} className="opacity-20 text-purple-400" />
@@ -1240,12 +1329,10 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           </ConnectButton.Custom>
         </div>
       ) : (
+        // ── FIX 15: scroll handler properly wired ──
         <div
-          className="space-y-2 overflow-y-auto max-h-[420px] pr-1 custom-scrollbar"
-          onScroll={(e) => {
-            const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
-            if (scrollHeight - scrollTop <= clientHeight + 50) loadMoreProxies();
-          }}
+          className="space-y-2 overflow-y-auto max-h-[440px] pr-1 custom-scrollbar"
+          onScroll={handleProxyListScroll}
         >
           {loading ? (
             Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-16 rounded-2xl shimmer" />)
@@ -1330,7 +1417,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       <div className="md:hidden min-h-screen flex flex-col pt-14">
         <WrongChainBanner />
 
-        {/* Mobile terminal sheet */}
         <AnimatePresence>
           {mobileShowTerminal && selectedProxy && (
             <motion.div key="mobile-terminal"
@@ -1339,7 +1425,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               className="fixed inset-0 z-[90] flex flex-col"
               style={{ paddingTop: 'env(safe-area-inset-top, 56px)', background: '#0d0a12' }}>
 
-              {/* Sheet header with back button */}
               <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/5 flex-shrink-0" style={{ background: 'rgba(13,10,20,0.95)' }}>
                 <motion.button onClick={closeTerminal}
                   className="w-8 h-8 rounded-full bg-white/8 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/12 transition-all flex-shrink-0"
@@ -1360,7 +1445,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                 )}
               </div>
 
-              {/* Back button for sub-views */}
               {view !== 'ACTIONS' && view !== 'DEPOSIT_STEPS' && view !== 'WITHDRAW_STEPS' && view !== 'CONNECT_STATUS' && view !== 'SIGNING_REQUIRED' && (
                 <button onClick={() => setView('ACTIONS')} className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-300 px-5 pt-4 pb-1 transition-colors">
                   <ChevronLeft size={13} /> Back to actions
@@ -1368,10 +1452,9 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               )}
 
               <div className="flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
-                <TerminalContent />
+                {TerminalContent()}
               </div>
 
-              {/* TX Status overlay */}
               <AnimatePresence>
                 {txStatus !== 'IDLE' && view !== 'SIGNING_REQUIRED' && view !== 'CONNECT_STATUS' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -1405,16 +1488,14 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
           )}
         </AnimatePresence>
 
-        {/* Mobile main content */}
         <div className="flex-1 px-4 pt-4 pb-24 overflow-y-auto">
           <AnimatePresence>
-            {activeTab === 'BRIDGE' && <BridgeContent key="bridge" />}
-            {activeTab === 'WITHDRAW_TEE' && <WithdrawTeeContent key="tee" />}
-            {activeTab === 'PA' && <ProxyList key="pa" />}
+            {activeTab === 'BRIDGE' && BridgeContent()}
+            {activeTab === 'WITHDRAW_TEE' && WithdrawTeeContent()}
+            {activeTab === 'PA' && ProxyList()}
           </AnimatePresence>
         </div>
 
-        {/* Mobile Chain Selector sheet */}
         <AnimatePresence>
           {showChainSelector && activeTab === 'BRIDGE' && (
             <motion.div key="mobile-chain-selector"
@@ -1422,12 +1503,11 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               transition={{ type: 'spring', stiffness: 300, damping: 32 }}
               className="fixed inset-0 z-[90] flex flex-col px-4 pt-4 pb-12"
               style={{ paddingTop: 'env(safe-area-inset-top, 56px)', background: 'rgba(12,8,22,0.98)', backdropFilter: 'blur(10px)' }}>
-              <ChainSelectorContent />
+              {ChainSelectorContent()}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Mobile bottom tab bar */}
         <div className="fixed bottom-0 left-0 right-0 z-[80] glass border-t border-white/8"
           style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           <div className="flex relative">
@@ -1438,7 +1518,13 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             ] as { id: MainTab; icon: React.ReactNode; label: string }[]).map(tab => (
               <button key={tab.id}
                 id={tab.id === 'PA' ? 'tut-tab-pa' : tab.id === 'WITHDRAW_TEE' ? 'tut-tab-tee-withdraw' : undefined}
-                onClick={() => { if (tab.id === 'PA') { setActiveTab('PA'); handleSwitchToPA(); } else if (tab.id === "WITHDRAW_TEE") { setActiveTab(tab.id); handleSwitchToWithdrawTee(); } else setActiveTab(tab.id); setMobileShowTerminal(false); setShowChainSelector(false); }}
+                onClick={() => {
+                  if (tab.id === 'PA') { setActiveTab('PA'); handleSwitchToPA(); }
+                  else if (tab.id === "WITHDRAW_TEE") { setActiveTab(tab.id); handleSwitchToWithdrawTee(); }
+                  else setActiveTab(tab.id);
+                  setMobileShowTerminal(false);
+                  setShowChainSelector(false);
+                }}
                 className={`flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-all ${activeTab === tab.id && !mobileShowTerminal ? 'text-purple-400' : 'text-gray-600'}`}>
                 <span className={`transition-transform ${activeTab === tab.id && !mobileShowTerminal ? 'scale-110' : 'scale-100'}`}>{tab.icon}</span>
                 {tab.label}
@@ -1454,14 +1540,12 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
       {/* ══ DESKTOP LAYOUT (≥ md) ════════════════════════ */}
       <main className="hidden md:flex items-center justify-center p-6 pt-28 min-h-screen">
         <div className="flex gap-3 items-start">
-          {/* Side icon bar */}
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="flex flex-col gap-2 pt-1">
             <SideTab active={activeTab === 'BRIDGE'} onClick={() => { setActiveTab('BRIDGE'); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 340); setShowChainSelector(false); }} icon={<ArrowRightLeft size={18} />} title="Bridge" />
             <SideTab id="tut-tab-tee-withdraw" active={activeTab === 'WITHDRAW_TEE'} onClick={() => { setActiveTab('WITHDRAW_TEE'); handleSwitchToWithdrawTee(); setTerminalVisible(false); setTimeout(() => setSelectedProxy(null), 340); setShowChainSelector(false); }} icon={<ArrowUpRight size={18} />} title="Withdraw TEE" />
             <SideTab id="tut-tab-pa" active={activeTab === 'PA'} onClick={() => { setActiveTab('PA'); handleSwitchToPA(); setShowChainSelector(false); }} icon={<Layers size={18} />} title="Accounts" />
           </motion.div>
 
-          {/* Main widget — width driven by terminalVisible/chain selector to avoid glitch on close */}
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
@@ -1474,7 +1558,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               boxShadow: '0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(168,85,247,0.08)',
             }}>
 
-            {/* Explorer pane */}
             <div className="p-7 flex flex-col flex-shrink-0" style={{ width: 440 }}>
               {wrongChain && (
                 <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-500/8 border border-amber-500/25 mb-5 flex-shrink-0">
@@ -1490,7 +1573,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               </AnimatePresence>
             </div>
 
-            {/* Terminal pane / Chain Selector */}
             <AnimatePresence mode="sync">
               {((selectedProxy && activeTab === 'PA') || (showChainSelector && activeTab === 'BRIDGE')) && (
                 <motion.div
@@ -1502,7 +1584,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
                   {activeTab === 'PA' && selectedProxy ? (
                     <>
-                      {/* Terminal header */}
                       <div className="flex items-center justify-between mb-5 flex-shrink-0">
                         <div>
                           <div className="flex items-center gap-2 mb-0.5">
@@ -1518,9 +1599,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                         </motion.button>
                       </div>
 
-                      <TerminalContent />
+                      {TerminalContent()}
 
-                      {/* TX Status overlay */}
                       <AnimatePresence>
                         {txStatus !== 'IDLE' && view !== 'SIGNING_REQUIRED' && view !== 'CONNECT_STATUS' && (
                           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -1591,7 +1671,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-md rounded-3xl overflow-hidden relative"
               style={{ background: 'rgba(18,10,36,0.98)', border: '1px solid rgba(168,85,247,0.15)', boxShadow: '0 0 80px rgba(147,51,234,0.2), 0 32px 64px rgba(0,0,0,0.7)' }}>
-              {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-lg bg-purple-500/15 border border-purple-500/25 flex items-center justify-center">
@@ -1603,7 +1682,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                   <X size={13} />
                 </button>
               </div>
-              {/* Steps */}
               <div className="px-6 py-5 space-y-3 max-h-[70vh] overflow-y-auto custom-scrollbar">
                 {effectiveSteps.map((s, i) => (
                   <div key={i} className="flex gap-3">
@@ -1619,7 +1697,6 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                   </div>
                 ))}
               </div>
-              {/* Footer */}
               <div className="px-6 py-4 border-t border-white/5 flex items-center justify-between">
                 <p className="text-[10px] text-gray-600">Signature only · No gas cost</p>
                 <motion.button onClick={() => { setShowHelpModal(false); setActiveTab('BRIDGE'); setTutorialStep(0); }}
@@ -1815,7 +1892,7 @@ const TUTORIAL_STEPS: TutorialStepDef[] = [
   }
 ];
 
-/* ─── TUTORIAL POPOVER (MATCHES USER SCREENSHOT STYLE) ───── */
+/* ─── TUTORIAL POPOVER ───── */
 function TutorialTooltip({
   step, effectiveSteps, onNext, onPrev, onSkip,
 }: {
@@ -1850,7 +1927,7 @@ function TutorialTooltip({
             bestRect = rect;
           }
         });
-        if (visibleEl) break; // found a visible target, stop searching fallbacks
+        if (visibleEl) break;
       }
 
       if (visibleEl && bestRect) {
@@ -1862,8 +1939,8 @@ function TutorialTooltip({
 
     updateRect();
     window.addEventListener('resize', updateRect);
-    window.addEventListener('scroll', updateRect, true); // capture scroll in containers
-    const interval = setInterval(updateRect, 300); // Polling for layout shifts
+    window.addEventListener('scroll', updateRect, true);
+    const interval = setInterval(updateRect, 300);
     return () => {
       window.removeEventListener('resize', updateRect);
       window.removeEventListener('scroll', updateRect, true);
@@ -1877,45 +1954,39 @@ function TutorialTooltip({
   const isFirst = step === 0;
   const isLast = step === effectiveSteps.length - 1;
 
-  // If no target is found (e.g., element is temporarily missing during an animation), return null
-  // The polling interval will instantly automatically mount this popover when the element finishes animating into layout
   if (!s.targetId || !targetRect) return null;
 
-  // Calculate Tooltip position relative to the target Rect
   const pad = 14;
   const side = s.tooltipSide || 'bottom';
   let tipStyle: React.CSSProperties = { position: 'absolute' };
-  let arrowClass = '';
   let arrowStyle: React.CSSProperties = { position: 'absolute', width: 14, height: 14, backgroundColor: '#7c3aed', transform: 'rotate(45deg)' };
 
-  // Calculate styles based on the side it should pop out
   if (side === 'bottom') {
     tipStyle.top = targetRect.bottom + pad;
     tipStyle.left = targetRect.left;
-    arrowStyle.top = -6; // Pull arrow up
-    arrowStyle.left = 24; // Offset from left
+    arrowStyle.top = -6;
+    arrowStyle.left = 24;
   } else if (side === 'top') {
     tipStyle.bottom = window.innerHeight - targetRect.top + pad;
     tipStyle.left = targetRect.left;
-    arrowStyle.bottom = -6; // Pull arrow down
+    arrowStyle.bottom = -6;
     arrowStyle.left = 24;
   } else if (side === 'right') {
     tipStyle.top = targetRect.top;
     tipStyle.left = targetRect.right + pad;
     arrowStyle.top = 24;
-    arrowStyle.left = -6; // Pull arrow left
+    arrowStyle.left = -6;
   } else if (side === 'left') {
     tipStyle.top = targetRect.top;
     tipStyle.right = window.innerWidth - targetRect.left + pad;
     arrowStyle.top = 24;
-    arrowStyle.right = -6; // Pull arrow right
+    arrowStyle.right = -6;
   } else if (side === 'center') {
     tipStyle.top = targetRect.top + targetRect.height / 2;
     tipStyle.left = targetRect.left + targetRect.width / 2;
     tipStyle.transform = 'translate(-50%, -50%)';
   }
 
-  // Constrain tooltip to viewport (naively)
   if (side === 'bottom' || side === 'top') {
     tipStyle.maxWidth = '300px';
     if (targetRect.left + 300 > window.innerWidth) {
@@ -1928,7 +1999,6 @@ function TutorialTooltip({
 
   return (
     <div className="fixed inset-0 z-[500] pointer-events-none">
-      {/* Target Highlight box (mimics the glowing green focus from their references, but in purple) */}
       <div
         className="absolute border-2 border-[#7c3aed] bg-[#7c3aed]/10 pointer-events-none rounded transition-all duration-300"
         style={{
@@ -1940,7 +2010,6 @@ function TutorialTooltip({
         }}
       />
 
-      {/* Tooltip Card directly pointing at the element */}
       <motion.div
         key={`tip-${step}`}
         initial={{ opacity: 0, scale: 0.95, y: side === 'bottom' ? -10 : 0 }}
@@ -1959,14 +2028,10 @@ function TutorialTooltip({
   );
 }
 
-// Inner content of the tooltip (Built to match user's simple popover expectation)
 function TooltipCard({ s, step, isFirst, isLast, totalSteps, onNext, onPrev, onSkip, arrowStyle }: any) {
   return (
     <div className="relative rounded-lg shadow-2xl overflow-hidden pointer-events-auto" style={{ backgroundColor: '#7c3aed', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
-      {/* The pointer arrow */}
       {arrowStyle && <div style={arrowStyle} />}
-
-      {/* Header / Content */}
       <div className="relative z-10 p-5 pb-4">
         <div className="flex justify-between items-start mb-2">
           <div className="flex items-center gap-2">
@@ -1978,15 +2043,12 @@ function TooltipCard({ s, step, isFirst, isLast, totalSteps, onNext, onPrev, onS
           </button>
         </div>
         <p className="text-[13px] text-white/90 leading-snug">{s.desc}</p>
-
         {s.note && (
           <p className="text-[11px] text-white/70 mt-2 italic border-l-2 border-white/30 pl-2">
             Note: {s.note}
           </p>
         )}
       </div>
-
-      {/* Footer / Controls */}
       <div className="relative z-10 px-5 py-3 flex items-center justify-between" style={{ backgroundColor: 'rgba(0,0,0,0.15)' }}>
         <span className="text-[11px] font-semibold text-white/80">
           Step {step + 1} of {totalSteps}

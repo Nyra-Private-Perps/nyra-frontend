@@ -1,7 +1,7 @@
 "use client";
 import { Activity, Menu, X, Layers, Globe, AlertTriangle, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAccount, useSwitchChain, useBalance } from 'wagmi'
@@ -9,6 +9,7 @@ import { formatUnits } from 'viem'
 import Horizen from '../../../public/horizen2.png';
 import Arbitrum from '../../../public/arb.png';
 import Nyralogo from '../../../public/nyra-logo.png';
+import { apiGetMetrics } from '@/lib/api';
 
 interface HeaderProps {
   currentPage: 'dashboard' | 'portfolio'
@@ -135,7 +136,6 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { chain, address } = useAccount();
   const { switchChain } = useSwitchChain();
-
   const isArbitrum = chain?.id === ARBITRUM_ID;
   const isHorizen = chain?.id === HORIZEN_ID;
   const isWrongNetwork = currentPage === 'portfolio' ? !isArbitrum : (!isArbitrum && !isHorizen);

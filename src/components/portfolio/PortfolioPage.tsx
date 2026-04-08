@@ -14,7 +14,8 @@ import {
 import Header from '@/components/dashboard/Header';
 import {
   apiStealthAddresses, getStoredEOA, getHLUserState,
-  getHLSpotState, numFmt, getHLUserFills
+  getHLSpotState, numFmt, getHLUserFills,
+  apiGetMetrics
 } from '@/lib/api/hyperStealth';
 
 const ARBITRUM_ID = 42161;
@@ -51,9 +52,9 @@ interface Totals {
    ANIMATED COUNTER
 ───────────────────────────────────────────────────────── */
 function AnimatedNumber({
-  value, prefix = '$', decimals = 2, className = '',
+  value, prefix = '$', decimals = 2, className = '', suffix = '',
 }: {
-  value: number; prefix?: string; decimals?: number; className?: string;
+  value: number; prefix?: string; decimals?: number; className?: string; suffix?: string;
 }) {
   const mValue = useMotionValue(value);
   const spring = useSpring(mValue, { stiffness: 60, damping: 20 });
@@ -66,7 +67,7 @@ function AnimatedNumber({
   const [text, setText] = useState(display.get());
   useEffect(() => { mValue.set(value); }, [value, mValue]);
   useEffect(() => display.on('change', setText), [display]);
-  return <span className={className}>{text}</span>;
+  return <span className={className}>{text}{suffix && <span className="text-sm text-gray-500 ml-1">{suffix}</span>}</span>;
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -543,14 +544,30 @@ export default function PortfolioPage({
   const [phase, setPhase] = useState<'idle' | 'auth' | 'streaming' | 'done' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [hideEmpty, setHideEmpty] = useState(true);
-  const abortRef = useRef(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 20; // or your preferred number
+  const [totalPages, setTotalPages] = useState(1);
+  const [grandTotal, setGrandTotal] = useState(0);
+  const pageOffset = (page - 1) * pageSize;
+  const allNodesRef = useRef<Map<string, NodeState>>(new Map());
+  const [globalCount, setGlobalCount] = useState<{ totalStealthAddresses: number } | null>(null);
 
+  const abortRef = useRef(false);
+  useEffect(() => {
+    apiGetMetrics().then(res => { setGlobalCount(res); console.log(res, "response") }).catch(console.error);
+  }, []);
   // Enforce Arbitrum
   useEffect(() => {
     if (chain?.id && chain.id !== ARBITRUM_ID) {
       switchChain({ chainId: ARBITRUM_ID });
     }
   }, [chain?.id]);
+
+  useEffect(() => {
+    if (phase !== 'idle') {  // only auto-reload if already authenticated
+      load();
+    }
+  }, [page]);
 
   const recomputeTotals = useCallback((nodeList: NodeState[], total: number) => {
     const loaded = nodeList.filter(n => n.status === 'loaded');
@@ -565,31 +582,45 @@ export default function PortfolioPage({
       spotUsdc: loaded.reduce((s, n) => s + n.spotUsdc, 0),
       positions: loaded.flatMap(n => n.positions),
       history: allHistory,
-      loadedCount: nodeList.filter(n => n.status !== 'pending').length,
-      totalCount: total,
+      loadedCount: loaded.length,
+      totalCount: total, // this is now grandTotal passed in
     });
   }, []);
-
   const load = useCallback(async () => {
     abortRef.current = false;
-    setPhase('auth'); setError(null); setNodes([]);
+    setPhase('auth'); setError(null);
+
+    // Only clear accumulated data on fresh load (page 1 or manual sync)
+    if (page === 1) {
+      allNodesRef.current = new Map();
+      setNodes([]);
+    }
+
     const eoa = getStoredEOA() || address;
     if (!eoa || !signTypedDataAsync) {
       setError('Wallet not connected'); setPhase('error'); return;
     }
     try {
-      const registry = await apiStealthAddresses(eoa, signTypedDataAsync);
+      const registry = await apiStealthAddresses(eoa, signTypedDataAsync, page, pageSize);
+      setGrandTotal(registry.total);
+      setTotalPages(Math.ceil(registry.total / registry.pageSize));
+
       const addresses: string[] = registry.stealthAddresses.map((s: any) => s.address);
       if (!addresses.length) {
         setError('No stealth identities found in registry'); setPhase('error'); return;
       }
 
-      const initial: NodeState[] = addresses.map((addr, idx) => ({
-        address: addr, idx, status: 'pending',
-        accountValue: 0, unrealizedPnl: 0, marginUsed: 0, withdrawable: 0, spotUsdc: 0,
-        positions: [], trades: [],
-      }));
-      setNodes(initial);
+      const pageOffset = (page - 1) * pageSize;
+
+      // Add pending placeholders for this page into the map
+      addresses.forEach((addr, idx) => {
+        allNodesRef.current.set(addr, {
+          address: addr, idx: pageOffset + idx, status: 'pending',
+          accountValue: 0, unrealizedPnl: 0, marginUsed: 0, withdrawable: 0, spotUsdc: 0,
+          positions: [], trades: [],
+        });
+      });
+      setNodes(Array.from(allNodesRef.current.values()).sort((a, b) => a.idx - b.idx));
       setPhase('streaming');
 
       let i = 0;
@@ -599,7 +630,6 @@ export default function PortfolioPage({
           const idx = i++;
           const addr = addresses[idx];
           try {
-            // Fetch perp state, fills, and spot state in parallel
             const [perpState, fills, spotState] = await Promise.all([
               getHLUserState(addr),
               getHLUserFills(addr),
@@ -611,7 +641,6 @@ export default function PortfolioPage({
               .filter((p: any) => Number(p.position?.szi) !== 0)
               .map((p: any) => ({ ...p.position, parentProxy: addr }));
 
-            // Extract spot USDC balance from spotClearinghouseState
             const spotBalances: any[] = spotState?.balances ?? [];
             const usdcSpot = spotBalances.find(
               (b: any) => b.coin === 'USDC' || b.coin === 'USDC:0xe3b'
@@ -619,7 +648,7 @@ export default function PortfolioPage({
             const spotUsdc = usdcSpot ? Number(usdcSpot.total ?? 0) : 0;
 
             const result: NodeState = {
-              address: addr, idx,
+              address: addr, idx: pageOffset + idx,
               status: (summary || fills?.length || spotUsdc > 0) ? 'loaded' : 'empty',
               accountValue: Number(summary?.accountValue ?? 0),
               unrealizedPnl: Number(summary?.unrealizedPnl ?? 0),
@@ -630,12 +659,11 @@ export default function PortfolioPage({
               trades: (fills ?? []).map((f: any) => ({ ...f, parentProxy: addr })),
             };
 
-            setNodes(prev => {
-              const next = [...prev];
-              next[idx] = result;
-              recomputeTotals(next, addresses.length);
-              return next;
-            });
+            // Update the map and recompute from ALL accumulated nodes
+            allNodesRef.current.set(addr, result);
+            const allSorted = Array.from(allNodesRef.current.values()).sort((a, b) => a.idx - b.idx);
+            setNodes(allSorted);
+            recomputeTotals(allSorted, registry.total);
           } catch (e) {
             console.error(`Error loading node ${addr}`, e);
           }
@@ -643,15 +671,32 @@ export default function PortfolioPage({
       });
 
       await Promise.all(workers);
-      if (!abortRef.current) setPhase('done');
+      if (!abortRef.current) {
+        const currentTotalPages = Math.ceil(registry.total / registry.pageSize);
+        if (page < currentTotalPages) {
+          setPage(p => p + 1); // triggers useEffect → loads next page automatically
+        } else {
+          setPhase('done'); // all pages loaded
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load portfolio');
       setPhase('error');
     }
-  }, [address, signTypedDataAsync, recomputeTotals]);
+  }, [address, signTypedDataAsync, recomputeTotals, page]);
 
   useEffect(() => { return () => { abortRef.current = true; }; }, [address]);
 
+  const handleSync = useCallback(() => {
+    allNodesRef.current = new Map();
+    if (page !== 1) {
+      setPage(1); // this triggers the useEffect which calls load()
+    } else {
+      load(); // already page 1, call directly
+    }
+  }, [page, load]);
+
+  // This already works correctly since nodes state now holds all accumulated nodes
   const displayNodes = hideEmpty ? nodes.filter(n => n.status !== 'empty') : nodes;
   const isLoading = phase === 'auth' || phase === 'streaming';
 
@@ -669,7 +714,10 @@ export default function PortfolioPage({
       color: 'text-cyan-400', icon: <DollarSign size={14} />
     },
     {
-      label: 'Active Nodes', value: nodes.filter(n => n.status === 'loaded').length, prefix: '', decimals: 0,
+      label: 'Active Nodes',
+      value: totals.loadedCount,  // 👈 loaded so far, not grandTotal
+      suffix: `/ ${grandTotal}`,
+      prefix: '', decimals: 0,
       color: 'text-purple-400', icon: <Target size={14} />
     },
     {
@@ -737,7 +785,7 @@ export default function PortfolioPage({
               </div>
             )}
             <motion.button
-              onClick={load} disabled={isLoading}
+              onClick={handleSync} disabled={isLoading}
               className="flex items-center gap-2 px-4 py-2 rounded-full btn-purple text-white text-xs font-medium disabled:opacity-50"
               whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
             >
@@ -746,6 +794,25 @@ export default function PortfolioPage({
             </motion.button>
           </div>
         </motion.div>
+        {/* Global Social Proof Banner */}
+        {globalCount?.totalStealthAddresses && globalCount?.totalStealthAddresses > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="flex items-center justify-center gap-3 px-5 py-3 rounded-2xl border border-purple-500/10 bg-purple-500/5"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
+              <span className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Network</span>
+            </div>
+            <div className="h-3 w-px bg-white/10" />
+            <span className="text-sm font-semibold text-white tabular-nums">
+              {globalCount?.totalStealthAddresses?.toLocaleString()}
+            </span>
+            <span className="text-xs text-gray-500">stealth addresses secured globally</span>
+          </motion.div>
+        )}
 
         {/* Error */}
         <AnimatePresence>
@@ -784,6 +851,7 @@ export default function PortfolioPage({
               ) : (
                 <AnimatedNumber
                   value={m.value} prefix={m.prefix} decimals={m.decimals}
+                  suffix={m.suffix}
                   className={`text-lg sm:text-2xl font-semibold ${m.color}`}
                 />
               )}
@@ -926,6 +994,23 @@ export default function PortfolioPage({
             ))}
           </div>
         </motion.div>
+
+        {/* Replace the Pagination block with this progress bar */}
+        {grandTotal > 0 && (
+          <div className="flex flex-col items-center gap-2 pt-4">
+            <div className="w-full max-w-sm h-1 rounded-full bg-white/5 overflow-hidden">
+              <motion.div
+                className="h-full bg-gradient-to-r from-purple-600 to-purple-400 rounded-full"
+                animate={{ width: `${(totals.loadedCount / grandTotal) * 100}%` }}
+                transition={{ duration: 0.4, ease: 'easeOut' }}
+              />
+            </div>
+            <span className="text-[10px] text-gray-600 font-mono">
+              {totals.loadedCount} / {grandTotal} nodes indexed
+            </span>
+          </div>
+        )}
+
 
       </main>
     </motion.div>
