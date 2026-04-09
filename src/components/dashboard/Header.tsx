@@ -9,7 +9,7 @@ import { formatUnits } from 'viem'
 import Horizen from '../../../public/horizen2.png';
 import Arbitrum from '../../../public/arb.png';
 import Nyralogo from '../../../public/nyra-logo.png';
-import { apiGetMetrics } from '@/lib/api';
+import { createPortal } from 'react-dom'
 
 interface HeaderProps {
   currentPage: 'dashboard' | 'portfolio'
@@ -230,24 +230,25 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
           transition={{ delay: 0.4, duration: 0.4 }}
         >
           {/* Network badge — desktop only */}
-          <motion.button
-            className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 ${isWrongNetwork
-              ? 'bg-red-500/10 border-red-500/25 text-red-400'
-              : isHorizen
-                ? 'bg-amber-500/10 border-amber-500/25 text-amber-400'
-                : 'bg-white/5 border-white/8 text-gray-400 hover:text-white hover:bg-white/8'
-              }`}
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-          >
-            {isWrongNetwork
-              ? <AlertTriangle size={12} className="animate-pulse" />
-              : isArbitrum ? <img src={Arbitrum} width={'20px'} height={'20px'} alt="Arbitrum Network" /> : <img className='rounded-full' src={Horizen} width={'20px'} height={'20px'} alt="Horizen Network" />
-            }
-            <span className="text-xs font-semibold">{chain?.name || 'No Network'}</span>
-            {isWrongNetwork && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded-full ml-1">Switch</span>}
-          </motion.button>
-
+          {chain?.name ?
+            <motion.button
+              className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 ${isWrongNetwork
+                ? 'bg-red-500/10 border-red-500/25 text-red-400'
+                : isHorizen
+                  ? 'bg-amber-500/10 border-amber-500/25 text-amber-400'
+                  : 'bg-white/5 border-white/8 text-gray-400 hover:text-white hover:bg-white/8'
+                }`}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              {isWrongNetwork
+                ? <AlertTriangle size={12} className="animate-pulse" />
+                : isArbitrum ? <img src={Arbitrum} width={'20px'} height={'20px'} alt="Arbitrum Network" /> : <img className='rounded-full' src={Horizen} width={'20px'} height={'20px'} alt="Horizen Network" />
+              }
+              <span className="text-xs font-semibold">{chain?.name || 'No Network'}</span>
+              {isWrongNetwork && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded-full ml-1">Switch</span>}
+            </motion.button>
+            : ""}
           {/* Wallet — custom dropdown with balances */}
           <ConnectButton.Custom>
             {({ account, chain: wChain, openAccountModal, openConnectModal, mounted }) => {
@@ -280,10 +281,11 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
           </ConnectButton.Custom>
 
           {/* Mobile burger */}
+          {/* Mobile burger — needs z-index above portal backdrop (9998) */}
           <Button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             variant="ghost"
-            className="md:hidden p-2 rounded-full text-gray-400 hover:text-white hover:bg-white/5"
+            className="md:hidden p-2 rounded-full text-gray-400 hover:text-white hover:bg-white/5 relative z-[9999]"
           >
             {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
           </Button>
@@ -291,46 +293,120 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
       </div>
 
       {/* MOBILE MENU */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.22 }}
-            className="md:hidden border-t border-white/5 px-4 py-4 space-y-2"
-          >
-            {/* Network on mobile */}
-            <button
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${isWrongNetwork
-                ? 'bg-red-500/10 border-red-500/25 text-red-400'
-                : 'bg-white/3 border-white/8 text-gray-400'
-                }`}
-            >
-              <Globe size={14} className={isArbitrum ? 'text-purple-400' : isHorizen ? 'text-amber-400' : 'text-gray-600'} />
-              {chain?.name || 'No Network'}
-              {isWrongNetwork && <span className="ml-auto text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full">Switch</span>}
-            </button>
+      {/* MOBILE MENU — rendered via portal outside header stacking context */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <>
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed left-0 right-0 bottom-0 md:hidden"
+                style={{
+                  top: '56px',           // 👈 starts below header (h-14 = 56px), not inset-0
+                  zIndex: 9998,
+                  background: 'rgba(0,0,0,0.4)',
+                  backdropFilter: 'blur(4px)'
+                }}
+                onClick={() => setMobileMenuOpen(false)}
+              />
 
-            {navItems.filter(item => address || item.value !== 'portfolio').map(item => (
-              <button
-                key={item.value}
-                onClick={() => { onNavigate(item.value); setMobileMenuOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${currentPage === item.value
-                  ? 'bg-purple-500/10 border-purple-500/25 text-purple-300'
-                  : 'bg-white/3 border-white/8 text-gray-400'
-                  }`}
+              {/* Menu panel */}
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.22 }}
+                className="fixed left-0 right-0 top-14 md:hidden px-4 py-4 space-y-2"
+                style={{
+                  zIndex: 9999,  // 👈 above everything — tutorial, overlays, all of it
+                  background: 'rgba(13,10,20,0.98)',
+                  backdropFilter: 'blur(20px)',
+                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                }}
               >
-                <span className={currentPage === item.value ? 'text-purple-400' : 'text-gray-600'}>{item.icon}</span>
-                {item.label}
-              </button>
-            ))}
-            <div className="pt-2 border-t border-white/5 flex justify-center">
-              <ConnectButton label="Connect" />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                {/* Network on mobile */}
+                <button
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${isWrongNetwork
+                    ? 'bg-red-500/10 border-red-500/25 text-red-400'
+                    : 'bg-white/3 border-white/8 text-gray-400'
+                    }`}
+                >
+                  <Globe size={14} className={isArbitrum ? 'text-purple-400' : isHorizen ? 'text-amber-400' : 'text-gray-600'} />
+                  {chain?.name || 'No Network'}
+                  {isWrongNetwork && (
+                    <span className="ml-auto text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full">Switch</span>
+                  )}
+                </button>
+
+                {navItems.filter(item => address || item.value !== 'portfolio').map(item => (
+                  <button
+                    key={item.value}
+                    onClick={() => { onNavigate(item.value); setMobileMenuOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${currentPage === item.value
+                      ? 'bg-purple-500/10 border-purple-500/25 text-purple-300'
+                      : 'bg-white/3 border-white/8 text-gray-400'
+                      }`}
+                  >
+                    <span className={currentPage === item.value ? 'text-purple-400' : 'text-gray-600'}>
+                      {item.icon}
+                    </span>
+                    {item.label}
+                  </button>
+                ))}
+
+                {/* Replace the bottom ConnectButton section in the portal menu */}
+                <div className="pt-2 border-t border-white/5 space-y-2">
+                  <ConnectButton.Custom>
+                    {({ account, chain: wChain, openAccountModal, openConnectModal, openChainModal, mounted }) => {
+                      const connected = mounted && account && wChain;
+                      return (
+                        <div className="space-y-2">
+                          {connected ? (
+                            <>
+                              {/* Network row */}
+                              <button
+                                onClick={openChainModal}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border bg-white/3 border-white/8 text-sm font-medium text-gray-400 transition-all hover:bg-white/5"
+                              >
+                                {wChain.hasIcon && wChain.iconUrl && (
+                                  <img src={wChain.iconUrl} alt={wChain.name} className="w-5 h-5 rounded-full" />
+                                )}
+                                <span className="flex-1 text-left">{wChain.name}</span>
+                                <ChevronDown size={14} className="text-gray-600" />
+                              </button>
+
+                              {/* Account row */}
+                              <button
+                                onClick={() => { openAccountModal(); setMobileMenuOpen(false); }}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border bg-white/3 border-white/8 text-sm font-medium text-gray-300 transition-all hover:bg-white/5"
+                              >
+                                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" />
+                                <span className="flex-1 text-left font-mono text-xs">{account.displayName}</span>
+                                <ChevronDown size={14} className="text-gray-600" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={openConnectModal}
+                              className="w-full py-3 rounded-2xl btn-purple text-white text-sm font-semibold"
+                            >
+                              Connect Wallet
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }}
+                  </ConnectButton.Custom>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body  // 👈 portal renders directly into body, outside all stacking contexts
+      )}
     </motion.header>
   );
 }

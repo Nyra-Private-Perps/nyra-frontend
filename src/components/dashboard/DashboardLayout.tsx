@@ -26,6 +26,35 @@ import { approveToken, switchChainNetwork } from '@/lib/walletHelpers';
 import { getAddress, parseUnits } from 'viem';
 import Horizen from '../../../public/horizen2.png';
 import Arbitrum from '../../../public/arb.png';
+import Optimisim from '../../../public/optimism-ethereum-op-logo.png';
+import Avalanche from '../../../public/avalanche.png';
+import Base from '../../../public/baselogo.png';
+import Polygon from '../../../public/polygon-matic-logo.png';
+import Ethereum from '../../../public/ethereum-eth.png';
+
+const CHAIN_LOGOS: Record<string, string> = {
+  arbitrum: Arbitrum,
+  horizen: Horizen,
+  optimism: Optimisim,
+  avalanche: Avalanche,
+  base: Base,
+  polygon: Polygon,
+  ethereum: Ethereum,
+};
+
+// Helper component used in both selector and selected display
+function ChainLogo({ chainId, size = 30 }: { chainId: string; size?: number }) {
+  const src = CHAIN_LOGOS[chainId];
+  if (src) {
+    return <img src={src} width={size} height={size} alt={chainId} className="rounded-full object-cover" />;
+  }
+  // Fallback for unknown chains
+  return (
+    <span className="text-xs font-bold text-white">
+      {chainId.charAt(0).toUpperCase()}
+    </span>
+  );
+}
 
 const ARBITRUM_ID = 42161;
 const HORIZEN_ID = 26514;
@@ -1015,11 +1044,10 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                 id="tut-bridge-network"
                 onClick={() => setShowChainSelector(true)}
                 className={`flex items-center gap-3 p-4 rounded-2xl border cursor-pointer transition-colors ${getBridgeError() ? 'border-red-500/40 bg-red-500/3' : 'border-white/8 bg-white/3 hover:border-purple-500/25'}`}>
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${isDirect ? 'bg-blue-600' : sourceChainName === 'horizen' ? 'bg-blue-900 border border-blue-700' : sourceChainName === '' ? 'bg-white/10' : 'bg-purple-500'}`}>
-                  {isDirect ? <img src={Arbitrum} width={'30px'} height={'30px'} alt="Arbitrum Network" className="rounded-full" /> :
-                    sourceChainName === 'horizen' ? <img src={Horizen} width={'30px'} height={'30px'} alt="Horizen Network" className="rounded-full" /> :
-                      sourceChainName === '' ? '🌐' :
-                        (activeChainConfig?.name.charAt(0).toUpperCase() || 'C')}
+                {/* Replace this entire block in the From section: */}
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${sourceChainName === '' ? 'bg-white/10' : isDirect ? 'bg-blue-600' : 'bg-white/10'
+                  }`}>
+                  {sourceChainName === '' ? '🌐' : <ChainLogo chainId={sourceChainName} size={30} />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className={`text-sm font-medium ${sourceChainName === '' ? 'text-white/60' : 'text-white'}`}>{sourceChainName === '' ? 'Select Asset' : `USDC${isDirect ? '' : '.e'}`}</p>
@@ -1168,10 +1196,10 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
             className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between group ${sourceChainName === chain.id ? 'bg-purple-500/10 border-purple-500/25' : 'bg-white/2 border-white/6 hover:border-white/12'
               }`}>
             <div className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 shadow-lg ${chain.id === 'arbitrum' ? 'bg-blue-600' : chain.id === 'horizen' ? 'bg-blue-900 border border-blue-700' : 'bg-purple-500/20'}`}>
-                {chain.id === 'arbitrum' ? <img src={Arbitrum} width={'30px'} height={'30px'} alt="Arbitrum Network" className="rounded-full" /> :
-                  chain.id === 'horizen' ? <img src={Horizen} width={'30px'} height={'30px'} alt="Horizen Network" className="rounded-full" /> :
-                    chain.name.charAt(0)}
+              {/* Replace the chain icon div inside the .map() in ChainSelectorContent */}
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 shadow-lg overflow-hidden ${CHAIN_LOGOS[chain.id] ? 'bg-transparent' : 'bg-purple-500/20'
+                }`}>
+                <ChainLogo chainId={chain.id} size={30} />
               </div>
               <div>
                 <p className="text-sm font-medium text-white">{chain.name}</p>
@@ -1903,7 +1931,8 @@ function TutorialTooltip({
   onSkip: () => void;
 }) {
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
-
+  // Detect mobile
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   useEffect(() => {
     if (step === null) return;
     const s = effectiveSteps[step];
@@ -1999,31 +2028,60 @@ function TutorialTooltip({
 
   return (
     <div className="fixed inset-0 z-[500] pointer-events-none">
-      <div
-        className="absolute border-2 border-[#7c3aed] bg-[#7c3aed]/10 pointer-events-none rounded transition-all duration-300"
-        style={{
-          left: targetRect.left - 4,
-          top: targetRect.top - 4,
-          width: targetRect.width + 8,
-          height: targetRect.height + 8,
-          boxShadow: '0 0 15px rgba(124,58,237,0.4)',
-        }}
-      />
+      {/* Highlight ring — same for both */}
+      {targetRect && (
+        <div
+          className="absolute border-2 border-[#7c3aed] bg-[#7c3aed]/10 pointer-events-none rounded transition-all duration-300"
+          style={{
+            left: targetRect.left - 4,
+            top: targetRect.top - 4,
+            width: targetRect.width + 8,
+            height: targetRect.height + 8,
+            boxShadow: '0 0 15px rgba(124,58,237,0.4)',
+          }}
+        />
+      )}
 
-      <motion.div
-        key={`tip-${step}`}
-        initial={{ opacity: 0, scale: 0.95, y: side === 'bottom' ? -10 : 0 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-        className="w-[280px] pointer-events-auto"
-        onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-label={s.title}
-        style={tipStyle}
-      >
-        <TooltipCard s={s} step={step} isFirst={isFirst} isLast={isLast} totalSteps={effectiveSteps.length} onNext={onNext} onPrev={onPrev} onSkip={onSkip} arrowStyle={arrowStyle} />
-      </motion.div>
+      {/* MOBILE: fixed bottom sheet */}
+      {isMobile ? (
+        <motion.div
+          key={`tip-mobile-${step}`}
+          initial={{ opacity: 0, y: 60 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 60 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+          className="pointer-events-auto fixed bottom-20 left-3 right-3"
+          style={{ zIndex: 501 }}
+          onClick={e => e.stopPropagation()}
+        >
+          <TooltipCard
+            s={s} step={step} isFirst={isFirst} isLast={isLast}
+            totalSteps={effectiveSteps.length}
+            onNext={onNext} onPrev={onPrev} onSkip={onSkip}
+            arrowStyle={null}
+          />
+        </motion.div>
+      ) : (
+        <motion.div
+          key={`tip-${step}`}
+          initial={{ opacity: 0, scale: 0.95, y: side === 'bottom' ? -10 : 0 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+          className="w-[280px] pointer-events-auto"
+          onClick={e => e.stopPropagation()}
+          role="dialog"
+          aria-label={s.title}
+          style={tipStyle}
+        >
+          <TooltipCard
+            s={s} step={step} isFirst={isFirst} isLast={isLast}
+            totalSteps={effectiveSteps.length}
+            onNext={onNext} onPrev={onPrev} onSkip={onSkip}
+            arrowStyle={arrowStyle}
+          />
+        </motion.div>
+      )}
     </div>
   );
 }
