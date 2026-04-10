@@ -56,6 +56,24 @@ function ChainLogo({ chainId, size = 30 }: { chainId: string; size?: number }) {
   );
 }
 
+const CHAIN_USDC: Record<string, { address: `0x${string}`; chainId: number }> = {
+  arbitrum: { address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', chainId: 42161 },
+  ethereum: { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', chainId: 1 },
+  optimism: { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', chainId: 10 },
+  base: { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', chainId: 8453 },
+  polygon: { address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', chainId: 137 },
+  avalanche: { address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', chainId: 43114 },
+  horizen: { address: (import.meta as any).env?.VITE_HORIZEN_USDC_ADDRESS, chainId: 26514 },
+};
+const TOKEN_BY_CHAIN: Record<string, string> = {
+  arbitrum: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // USDC native
+  ethereum: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // USDC
+  base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC native
+  optimism: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", // USDC native
+  polygon: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", // USDC native
+  horizen: (import.meta as any).env?.VITE_HORIZEN_USDC_ADDRESS,
+};
+
 const ARBITRUM_ID = 42161;
 const HORIZEN_ID = 26514;
 
@@ -251,17 +269,13 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
     { id: 'finalizing', label: 'Finalizing', desc: 'Confirming settlement' },
   ];
 
-  const { data: walletBal } = useBalance({
-    address,
-    token: HORIZEN_USDC_ADDRESS as `0x${string}`,
-    chainId: HORIZEN_ID,
-  });
+  const activeChainUsdc = CHAIN_USDC[sourceChainName];
 
-  const ARBITRUM_USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';
-  const { data: arbWalletBal } = useBalance({
+  const { data: selectedChainBal } = useBalance({
     address,
-    token: ARBITRUM_USDC as `0x${string}`,
-    chainId: ARBITRUM_ID,
+    token: activeChainUsdc?.address,
+    chainId: activeChainUsdc?.chainId,
+    query: { enabled: !!address && !!activeChainUsdc },
   });
 
   const isOnArbitrum = chain?.id === ARBITRUM_ID;
@@ -269,10 +283,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const wrongChain = !isOnArbitrum && !isOnHorizen;
 
   const depositMax = Number(serverBalance) / 1e6;
-  const isDirect = sourceChainName === 'arbitrum' || isOnArbitrum;
-  const bridgeMax = isDirect
-    ? Number(arbWalletBal?.formatted ?? 0)
-    : Number(walletBal?.formatted ?? 0);
+  const bridgeMax = Number(selectedChainBal?.formatted ?? 0);
   const teeMax = Number(serverBalance) / 1e6;
 
   const getBridgeError = useCallback(() => {
@@ -495,7 +506,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
   const handleBridge = async () => {
     setBridgePhase('switching'); setBridgeError(null);
     try {
-      const isDirect = isOnArbitrum || sourceChainName === 'arbitrum';
+      const isDirect = sourceChainName === 'arbitrum';
       const rawAmount = parseUnits(bridgeAmount, 6).toString();
 
       if (!isDirect) {
@@ -505,8 +516,8 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
 
       setBridgePhase('approving');
       const sc = supportedChains.find(c => c.name === sourceChainName);
-      const tokenAddress = isDirect ? "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" : (sc ? sc.token : HORIZEN_USDC_ADDRESS);
-
+      const tokenAddress = TOKEN_BY_CHAIN[sourceChainName] ?? (sc ? sc.token : HORIZEN_USDC_ADDRESS);
+      console.log(tokenAddress)
       await approveToken(tokenAddress, CENTRAL_WALLET, rawAmount);
 
       setBridgePhase('bridging');
@@ -1050,7 +1061,7 @@ export default function DashboardLayout({ onNavigate }: { onNavigate: (p: any) =
                   {sourceChainName === '' ? '🌐' : <ChainLogo chainId={sourceChainName} size={30} />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-sm font-medium ${sourceChainName === '' ? 'text-white/60' : 'text-white'}`}>{sourceChainName === '' ? 'Select Asset' : `USDC${isDirect ? '' : '.e'}`}</p>
+                  <p className={`text-sm font-medium ${sourceChainName === '' ? 'text-white/60' : 'text-white'}`}>{sourceChainName === '' ? 'Select Asset' : `USDC${isOnHorizen ? '.e' : ''}`}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <p className="text-xs text-gray-400 capitalize">{sourceChainName === '' ? 'Select Chain' : isDirect ? 'Arbitrum (Direct)' : sourceChainName === 'horizen' ? 'Horizen Mainnet' : sourceChainName}</p>
                     <ChevronDown size={12} className="text-gray-500" />

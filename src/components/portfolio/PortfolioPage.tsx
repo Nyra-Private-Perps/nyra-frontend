@@ -56,8 +56,8 @@ function AnimatedNumber({
 }: {
   value: number; prefix?: string; decimals?: number; className?: string; suffix?: string;
 }) {
-  const mValue = useMotionValue(value);
-  const spring = useSpring(mValue, { stiffness: 60, damping: 20 });
+  const mValue = useMotionValue(0);
+  const spring = useSpring(mValue, { stiffness: 40, damping: 25 });
   const display: MotionValue<string> = useTransform(
     spring,
     (v: number) => `${prefix}${Math.abs(v).toLocaleString('en-US', {
@@ -807,9 +807,14 @@ export default function PortfolioPage({
               <span className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Network</span>
             </div>
             <div className="h-3 w-px bg-white/10" />
-            <span className="text-sm font-semibold text-white tabular-nums">
-              {globalCount?.totalStealthAddresses?.toLocaleString()}
-            </span>
+
+            <AnimatedNumber
+              value={globalCount?.totalStealthAddresses ?? 0}
+              prefix=""
+              decimals={0}
+              className="text-sm font-semibold text-white tabular-nums"
+            />
+
             <span className="text-xs text-gray-500">stealth addresses secured globally</span>
           </motion.div>
         )}

@@ -9,11 +9,33 @@ import { formatUnits } from 'viem'
 import Horizen from '../../../public/horizen2.png';
 import Arbitrum from '../../../public/arb.png';
 import Nyralogo from '../../../public/nyra-logo.png';
+import Optimisim from '../../../public/optimism-ethereum-op-logo.png';
+import Avalanche from '../../../public/avalanche.png';
+import Base from '../../../public/baselogo.png';
+import Polygon from '../../../public/polygon-matic-logo.png';
+import Ethereum from '../../../public/ethereum-eth.png';
 import { createPortal } from 'react-dom'
 
 interface HeaderProps {
   currentPage: 'dashboard' | 'portfolio'
   onNavigate: (page: 'dashboard' | 'portfolio') => void
+}
+
+const CHAIN_LOGOS: Record<number, string> = {
+  42161: Arbitrum,   // Arbitrum
+  26514: Horizen,    // Horizen
+  1: Ethereum,   // Ethereum
+  10: Optimisim,  // Optimism
+  8453: Base,       // Base
+  137: Polygon,    // Polygon
+  43114: Avalanche,  // Avalanche
+};
+
+function ChainIcon({ chainId, size = 20 }: { chainId?: number; size?: number }) {
+  if (!chainId) return null;
+  const src = CHAIN_LOGOS[chainId];
+  if (src) return <img src={src} width={size} height={size} alt="" className="rounded-full" />;
+  return <Globe size={size} className="text-gray-400" />;
 }
 
 const navItems = [
@@ -230,25 +252,16 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
           transition={{ delay: 0.4, duration: 0.4 }}
         >
           {/* Network badge — desktop only */}
-          {chain?.name ?
+          {chain?.name && (
             <motion.button
-              className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 ${isWrongNetwork
-                ? 'bg-red-500/10 border-red-500/25 text-red-400'
-                : isHorizen
-                  ? 'bg-amber-500/10 border-amber-500/25 text-amber-400'
-                  : 'bg-white/5 border-white/8 text-gray-400 hover:text-white hover:bg-white/8'
-                }`}
+              className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 bg-white/5 border-white/8 text-gray-300 hover:text-white hover:bg-white/8"
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
             >
-              {isWrongNetwork
-                ? <AlertTriangle size={12} className="animate-pulse" />
-                : isArbitrum ? <img src={Arbitrum} width={'20px'} height={'20px'} alt="Arbitrum Network" /> : <img className='rounded-full' src={Horizen} width={'20px'} height={'20px'} alt="Horizen Network" />
-              }
-              <span className="text-xs font-semibold">{chain?.name || 'No Network'}</span>
-              {isWrongNetwork && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded-full ml-1">Switch</span>}
+              <ChainIcon chainId={chain.id} size={18} />
+              <span className="text-xs font-semibold">{chain.name}</span>
             </motion.button>
-            : ""}
+          )}
           {/* Wallet — custom dropdown with balances */}
           <ConnectButton.Custom>
             {({ account, chain: wChain, openAccountModal, openConnectModal, mounted }) => {
@@ -327,18 +340,10 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
                   borderBottom: '1px solid rgba(255,255,255,0.05)',
                 }}
               >
-                {/* Network on mobile */}
-                <button
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-medium transition-all ${isWrongNetwork
-                    ? 'bg-red-500/10 border-red-500/25 text-red-400'
-                    : 'bg-white/3 border-white/8 text-gray-400'
-                    }`}
-                >
-                  <Globe size={14} className={isArbitrum ? 'text-purple-400' : isHorizen ? 'text-amber-400' : 'text-gray-600'} />
-                  {chain?.name || 'No Network'}
-                  {isWrongNetwork && (
-                    <span className="ml-auto text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full">Switch</span>
-                  )}
+                {/* Network on mobile — no wrong network logic, just show current chain */}
+                <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border bg-white/3 border-white/8 text-sm font-medium text-gray-400 transition-all">
+                  <ChainIcon chainId={chain?.id} size={18} />
+                  <span>{chain?.name || 'No Network'}</span>
                 </button>
 
                 {navItems.filter(item => address || item.value !== 'portfolio').map(item => (
@@ -367,14 +372,13 @@ export default function Header({ currentPage, onNavigate }: HeaderProps) {
                           {connected ? (
                             <>
                               {/* Network row */}
+                              {/* Network row — inside ConnectButton.Custom */}
                               <button
                                 onClick={openChainModal}
                                 className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border bg-white/3 border-white/8 text-sm font-medium text-gray-400 transition-all hover:bg-white/5"
                               >
-                                {wChain.hasIcon && wChain.iconUrl && (
-                                  <img src={wChain.iconUrl} alt={wChain.name} className="w-5 h-5 rounded-full" />
-                                )}
-                                <span className="flex-1 text-left">{wChain.name}</span>
+                                <ChainIcon chainId={wChain?.id} size={18} />  {/* 👈 use ChainIcon instead of wChain.iconUrl */}
+                                <span className="flex-1 text-left">{wChain?.name}</span>
                                 <ChevronDown size={14} className="text-gray-600" />
                               </button>
 
