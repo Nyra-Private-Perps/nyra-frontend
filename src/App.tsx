@@ -12,6 +12,7 @@ import { Providers } from './providers'
 import DashboardLayout from './components/dashboard/DashboardLayout'
 import PortfolioPage from './components/portfolio/PortfolioPage'
 import { onPendingRequest, resolveRequest, type PendingRequest } from '@/lib/walletController'
+import { apiGetMetrics } from '@/lib/api/hyperStealth'
 import Nyralogo from "../public/nyra-logo.png";
 
 const ARBITRUM_ID = 42161
@@ -151,6 +152,11 @@ function LandingPage() {
   const { isConnected } = useAccount()
   const { switchChain } = useSwitchChain()
   const hasNavigatedRef = useRef(false)
+  const [metrics, setMetrics] = useState<{ totalStealthAddresses: number } | null>(null)
+
+  useEffect(() => {
+    apiGetMetrics().then(res => setMetrics(res)).catch(console.error)
+  }, [])
 
   // If already connected, open dashboard immediately
   useEffect(() => {
@@ -194,7 +200,7 @@ function LandingPage() {
         <div className="flex-1 flex flex-col items-center justify-center text-center px-5 sm:px-8 max-w-4xl mx-auto w-full -mt-12">
 
           {/* Subtle user count pill */}
-          {/* <motion.div
+          <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ delay: 0.8, duration: 0.6 }}
@@ -206,8 +212,8 @@ function LandingPage() {
                 <div key={i} className={`w-5 h-5 rounded-full ${color} opacity-80 border-2 border-[#030308]`} />
               ))}
             </div>
-            <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Trusted by <span className="text-white font-bold tracking-wider">14,203+</span> participants</span>
-          </motion.div> */}
+            <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Trusted by <span className="text-white font-bold tracking-wider">{metrics ? `${metrics.totalStealthAddresses}+` : '...'}</span> participants</span>
+          </motion.div>
 
           {/* Headline */}
           <div className="mb-12 w-full">
@@ -235,40 +241,30 @@ function LandingPage() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2, duration: 0.8 }}
             className="flex flex-col items-center">
 
-            <ConnectButton.Custom>
-              {({ openConnectModal, mounted }) => (
-                <div {...(!mounted && { 'aria-hidden': true, style: { opacity: 0, pointerEvents: 'none' as const } })}>
-                  <motion.button
-                    onClick={() => {
-                      if (isConnected) {
-                        switchChain({ chainId: HORIZEN_ID })
-                        navigate('/dashboard')
-                      } else {
-                        openConnectModal()
-                      }
-                    }}
-                    className="relative inline-flex items-center gap-3 px-9 py-4 sm:py-5 rounded-full text-white font-semibold text-base sm:text-lg overflow-hidden"
-                    style={{
-                      background: 'linear-gradient(135deg,#9333ea 0%,#7c3aed 50%,#4f46e5 100%)',
-                      boxShadow: '0 0 0 1px rgba(168,85,247,0.3), 0 8px 32px rgba(147,51,234,0.35)',
-                    }}
-                    whileHover={{ scale: 1.04, boxShadow: '0 0 60px rgba(147,51,234,0.6),0 0 0 1px rgba(168,85,247,0.5)' }}
-                    whileTap={{ scale: 0.97 }}
-                    transition={{ duration: 0.18 }}>
-                    <motion.span
-                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.13] to-transparent -skew-x-12 pointer-events-none"
-                      initial={{ x: '-120%' }} whileHover={{ x: '220%' }}
-                      transition={{ duration: 0.55, ease: 'easeInOut' }} />
-                    <span className="relative z-10">Get Started</span>
-                    <motion.span className="relative z-10"
-                      animate={{ x: [0, 4, 0] }}
-                      transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}>
-                      <ArrowRight size={18} />
-                    </motion.span>
-                  </motion.button>
-                </div>
-              )}
-            </ConnectButton.Custom>
+            <motion.button
+              onClick={() => {
+                if (isConnected) switchChain({ chainId: HORIZEN_ID })
+                navigate('/dashboard')
+              }}
+              className="relative inline-flex items-center gap-3 px-9 py-4 sm:py-5 rounded-full text-white font-semibold text-base sm:text-lg overflow-hidden"
+              style={{
+                background: 'linear-gradient(135deg,#9333ea 0%,#7c3aed 50%,#4f46e5 100%)',
+                boxShadow: '0 0 0 1px rgba(168,85,247,0.3), 0 8px 32px rgba(147,51,234,0.35)',
+              }}
+              whileHover={{ scale: 1.04, boxShadow: '0 0 60px rgba(147,51,234,0.6),0 0 0 1px rgba(168,85,247,0.5)' }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.18 }}>
+              <motion.span
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.13] to-transparent -skew-x-12 pointer-events-none"
+                initial={{ x: '-120%' }} whileHover={{ x: '220%' }}
+                transition={{ duration: 0.55, ease: 'easeInOut' }} />
+              <span className="relative z-10">Get Started</span>
+              <motion.span className="relative z-10"
+                animate={{ x: [0, 4, 0] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}>
+                <ArrowRight size={18} />
+              </motion.span>
+            </motion.button>
           </motion.div>
         </div>
       </div>
@@ -282,13 +278,10 @@ function DashboardRoute() {
   const { switchChain } = useSwitchChain()
   const navigate = useNavigate()
 
-  // Enforce Arbitrum on dashboard
+  // Only switch chain when connected — do NOT redirect if disconnected
   useEffect(() => {
-    if (!isConnected) { navigate('/') }
-    else switchChain({ chainId: HORIZEN_ID })
+    if (isConnected) switchChain({ chainId: HORIZEN_ID })
   }, [isConnected])
-
-  if (!isConnected) return null
 
   return (
     <motion.div
@@ -341,7 +334,7 @@ function AppContent() {
   const navigate = useNavigate()
   const { switchChain } = useSwitchChain()
 
-  // On wallet connect: switch to Arbitrum + go to dashboard
+  // On wallet connect: switch chain and navigate to dashboard if still on landing
   const hasConnectedRef = useRef(false)
   useEffect(() => {
     if (isConnected && !hasConnectedRef.current) {
@@ -353,7 +346,8 @@ function AppContent() {
     }
     if (!isConnected) {
       hasConnectedRef.current = false
-      navigate('/')
+      // Only redirect to landing from portfolio (which requires auth), not from dashboard
+      if (location.pathname === '/portfolio') navigate('/')
     }
   }, [isConnected])
 
